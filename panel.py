@@ -17,9 +17,9 @@ matplotlib Figure with one axes per slot, automatic panel labels (A/B/C,
 from __future__ import annotations
 
 import matplotlib
-import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
 
-from plotter import _apply_axis_limits, draw_plot
+from plotter import _apply_axis_limits, draw_plot, plot_style
 
 # ---------------------------------------------------------------------------
 # Defaults consumed by the Streamlit UI (kept here so panel.py owns its keys)
@@ -85,34 +85,43 @@ def make_panel_figure(
 
     Slots beyond `len(panels)` render as empty axes.
     """
-    fig, axs = plt.subplots(rows, cols, figsize=(fig_width, fig_height), squeeze=False)
-    flat_axs = [ax for row in axs for ax in row]
     n_slots = rows * cols
 
-    # First pass — draw plots (or hide axes for empty slots)
-    for i in range(n_slots):
-        ax = flat_axs[i]
-        panel = panels[i] if i < len(panels) else {"mode": "empty"}
-        mode = panel.get("mode", "empty")
-        if mode == "empty":
-            ax.set_axis_off()
-            continue
-        df = panel.get("df")
-        cfg = dict(panel.get("config", {}))
-        if df is None or df.empty:
-            ax.text(0.5, 0.5, "No data", ha="center", va="center",
-                    transform=ax.transAxes, fontsize=12, color="gray")
-            continue
-        try:
-            draw_plot(ax, df, **cfg)
-        except Exception as e:
-            ax.set_axis_off()
-            ax.text(0.5, 0.5, f"Plot error:\n{e}", ha="center", va="center",
-                    transform=ax.transAxes, fontsize=10, color="firebrick", wrap=True)
+    # The grid is created and laid out under the theme, matching what
+    # plotter.make_figure does for a single plot. Each panel's own draw_plot
+    # call re-applies the theme with that panel's typography, so panels can
+    # differ from one another without leaking settings into their neighbours.
+    with plot_style():
+        fig = Figure(figsize=(fig_width, fig_height))
+        axs = fig.subplots(rows, cols, squeeze=False)
+        flat_axs = [ax for row in axs for ax in row]
 
-    # Single tight_layout across the whole figure, then re-apply spacing
-    fig.tight_layout()
-    fig.subplots_adjust(wspace=wspace, hspace=hspace)
+        # First pass — draw plots (or hide axes for empty slots)
+        for i in range(n_slots):
+            ax = flat_axs[i]
+            panel = panels[i] if i < len(panels) else {"mode": "empty"}
+            mode = panel.get("mode", "empty")
+            if mode == "empty":
+                ax.set_axis_off()
+                continue
+            df = panel.get("df")
+            cfg = dict(panel.get("config", {}))
+            if df is None or df.empty:
+                ax.text(0.5, 0.5, "No data", ha="center", va="center",
+                        transform=ax.transAxes, fontsize=12, color="gray")
+                continue
+            try:
+                draw_plot(ax, df, **cfg)
+            except Exception as e:
+                # One broken panel must not cost the user the whole figure.
+                ax.set_axis_off()
+                ax.text(0.5, 0.5, f"Plot error:\n{e}", ha="center", va="center",
+                        transform=ax.transAxes, fontsize=10, color="firebrick",
+                        wrap=True)
+
+        # Single tight_layout across the whole figure, then re-apply spacing
+        fig.tight_layout()
+        fig.subplots_adjust(wspace=wspace, hspace=hspace)
 
     # Per-panel ylim/xlim — applied after tight_layout so it cannot re-expand them
     for i in range(n_slots):

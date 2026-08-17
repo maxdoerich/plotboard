@@ -1,14 +1,20 @@
 """
-presets.py — Save and load named plot-style presets as JSON files.
+presets.py — the settings schema (DEFAULTS) plus save/load of named presets.
 
 Presets are stored in  <project_root>/.presets/<name>.json
 They capture all visual/style settings but nothing data-specific
 (no file path, sheet, condition filter, label renames, or stat pair selection).
+
+DEFAULTS is the schema: every sidebar widget keyed ``ps_*`` must have an entry
+here, because `settings.py` uses this dict to decide what to persist across
+runs, what to write into a preset, and what to copy when panels are switched.
+A widget without an entry is invisible to all three.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 # Presets live next to this file (the project root), not cwd.
@@ -31,7 +37,9 @@ DEFAULTS: dict[str, object] = {
     "ps_point_size":       4.0,
     "ps_point_alpha":      0.7,
     # Labels
+    "ps_title":            "",
     "ps_xlabel":           "Condition",
+    "ps_ylabel":           "",
     "ps_leg_title":        "Treatment",
     "ps_show_legend":      True,
     "ps_legend_inside":    False,
@@ -46,7 +54,7 @@ DEFAULTS: dict[str, object] = {
     "ps_fig_width":        11,
     "ps_fig_height":       6,
     # Line plot
-    "ps_x_numeric":        False,
+    "ps_x_numeric":        "auto",     # "auto" | "numeric" | "categorical"
     "ps_x_suffix":         "",
     "ps_x_tick_interval":  0.0,
     "ps_y_tick_interval":  0.0,
@@ -69,7 +77,6 @@ DEFAULTS: dict[str, object] = {
     "ps_run_stats":        False,
     "ps_test_mode":        "ttest",
     "ps_compare_axis":     "conditions",
-    "ps_show_ns":          False,
     "ps_show_pvalue":      False,
     "ps_show_significance": True,
     "ps_show_fold_change": False,
@@ -93,7 +100,14 @@ DEFAULTS: dict[str, object] = {
     "ps_ymax_str":         "",
     "ps_xmin_str":         "",
     "ps_xmax_str":         "",
+    # Export background
+    "ps_export_transparent": False,
+    "ps_export_bg":          "#FFFFFF",
 }
+
+# Settings that are persisted per session but deliberately left out of preset
+# files: a preset is a *style*, and should not carry one figure's title text.
+PRESET_EXCLUDE: frozenset[str] = frozenset({"ps_title"})
 
 
 # ---------------------------------------------------------------------------
@@ -106,7 +120,8 @@ def _ensure_default() -> None:
     default_path = PRESETS_DIR / "Default.json"
     if not default_path.exists():
         default_path.write_text(
-            json.dumps(DEFAULTS, indent=2, ensure_ascii=False), encoding="utf-8"
+            json.dumps(_preset_payload(DEFAULTS), indent=2, ensure_ascii=False),
+            encoding="utf-8",
         )
 
 _ensure_default()
@@ -141,21 +156,21 @@ def save(name: str, settings: dict) -> None:
     """Save *settings* (subset of DEFAULTS keys) as a named preset."""
     name = _sanitise(name)
     PRESETS_DIR.mkdir(exist_ok=True)
-    data = {k: settings[k] for k in DEFAULTS if k in settings}
     (PRESETS_DIR / f"{name}.json").write_text(
-        json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
+        json.dumps(_preset_payload(settings), indent=2, ensure_ascii=False),
+        encoding="utf-8",
     )
 
 
 def load(name: str) -> dict:
     """
-    Load a preset and return a dict ready to merge into st.session_state.
+    Load a preset and return a dict ready to merge into the live settings.
     Missing keys are filled from DEFAULTS so the result is always complete.
     """
     path = PRESETS_DIR / f"{_sanitise(name)}.json"
     data = json.loads(path.read_text(encoding="utf-8"))
-    # Fill any keys that were added after the preset was saved
-    return {**DEFAULTS, **{k: v for k, v in data.items() if k in DEFAULTS}}
+    clean = {k: _migrate(k, v) for k, v in data.items() if k in DEFAULTS}
+    return {**DEFAULTS, **clean}
 
 
 def delete(name: str) -> None:
@@ -173,7 +188,25 @@ def exists(name: str) -> bool:
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _preset_payload(settings: dict) -> dict:
+    """The subset of *settings* that belongs in a preset file."""
+    return {
+        k: settings[k]
+        for k in DEFAULTS
+        if k in settings and k not in PRESET_EXCLUDE
+    }
+
+
+def _migrate(key: str, value: object) -> object:
+    """Bring a value saved by an older version up to the current schema."""
+    if key == "ps_x_numeric" and isinstance(value, bool):
+        # Was a checkbox ("proportional spacing on/off"); now a three-way
+        # choice.  The old False was also the default, so it maps to "auto"
+        # rather than forcing categorical spacing on every restored preset.
+        return "numeric" if value else "auto"
+    return value
+
+
 def _sanitise(name: str) -> str:
     """Strip characters that are unsafe in filenames."""
-    import re
     return re.sub(r'[\\/*?:"<>|]', "_", name.strip())
