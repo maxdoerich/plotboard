@@ -223,6 +223,10 @@ def test_stat_selection_draws_brackets():
     app.run()
     _assert_clean(app, "enabling statistics")
 
+    headings = [s.value for s in app.subheader]
+    assert any("Statistical comparisons" in h for h in headings), (
+        f"the comparisons table did not render; headings were {headings}")
+
     key = (f"_stat_editor::{app.session_state['ps_test_mode']}"
            f"::{app.session_state['ps_compare_axis']}"
            f"::{app.session_state['_sheet_select']}")

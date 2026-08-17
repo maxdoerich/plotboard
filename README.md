@@ -87,6 +87,20 @@ The **Default** preset is created automatically on first launch and always refle
 | **bar+strip** | Grouped bar chart with mean ± error bars, overlaid with individual data points. |
 | **box+strip** | Box-and-whisker plot (IQR box, median line, no outlier markers) overlaid with data points. |
 | **violin+strip** | Kernel density violin overlaid with data points. |
+| **line+scatter** | One line per treatment across conditions, with an error band or bars and optional trend line. |
+
+Settings are kept per plot type: switching to another type and back restores what you had.
+
+### Line options *(line+scatter only)*
+
+| Control | Description |
+|---|---|
+| **X-axis spacing** | **Auto-detect** (default) uses proportional spacing when every condition label starts with a number (`0`, `2 h`, `100 nM`), otherwise equal spacing. **Numeric** and **Categorical** force one or the other. |
+| **X-axis unit suffix** | Appended to tick labels that are a bare number, e.g. ` h`. |
+| **X / Y tick interval** | Fixed spacing between ticks; 0 = automatic. |
+| **Error style** | Shaded band or error bars. |
+| **Line width / Marker / Marker size** | Line and point appearance. |
+| **Trend line** | Smooth (through points), linear, polynomial 2/3, exponential, logarithmic, power law, or smoothing spline. Fit from group means or all replicates; overlay on the connecting line or replace it. |
 
 ---
 
@@ -108,9 +122,9 @@ The **Default** preset is created automatically on first launch and always refle
 
 | Control | Description |
 |---|---|
-| **Title** | Figure title. Pre-filled with `filename · sheet`. |
+| **Title** | Figure title. Follows `filename · sheet` until you type something; clear it again to get a blank title. |
 | **X-axis label** | Label below the x-axis. |
-| **Y-axis label** | Label on the y-axis. |
+| **Y-axis label** | Label on the y-axis. Follows the sheet name until you edit it; clear it for no label. |
 | **Legend title** | Header text of the colour legend. |
 | **Show legend** | Toggle legend visibility. |
 | **Legend inside** | Place the legend inside the plot area (top-right) instead of outside to the right. |
@@ -143,13 +157,14 @@ The **Default** preset is created automatically on first launch and always refle
 |---|---|
 | **Run statistical tests** | Master toggle. |
 | **Test** | **t-test vs reference condition** — independent two-sample t-test comparing every (treatment, condition) pair against a chosen reference condition. **ANOVA + Tukey HSD** — one-way ANOVA followed by Tukey's honestly significant difference test for all pairwise comparisons. |
-| **Compare** *(Tukey only)* | **Conditions (per treatment)** — compares condition groups within each treatment. **Treatments (per condition)** — compares treatments within each condition group. |
+| **Compare** | **Conditions (per treatment)** — compares condition groups within each treatment. **Treatments (per condition)** — compares treatments within each condition group. **All cell means** *(two-way ANOVA only)* — every cell against every other, with a global Sidak correction, matching Prism. |
 | **Reference condition** *(t-test only)* | The baseline condition all others are compared against. |
-| **Show 'ns'** | Draw brackets even for non-significant comparisons. |
 | **Show p-values instead of stars** | Label brackets with `p=0.023` / `p<0.001` instead of `*` / `***`. |
-| **Show brackets for** | Multiselect of all computed pairs. Defaults to significant pairs only (p < 0.05). Add or remove individual brackets as needed. |
+| **Show significance / Show fold change** | What to print above each bracket. With both on, the fold change (e.g. `1.7x`) sits above the significance label. |
 | **Bracket line width** | Thickness of the significance bracket lines. |
 | **Bracket font size** | Font size of the star / p-value text above brackets. |
+
+Brackets are chosen in the **📋 Statistical comparisons** table below the plot: tick a row to draw it. The table is sorted by adjusted p-value, and the plot updates in the same interaction.
 
 Significance thresholds: `***` p < 0.001 · `**` p < 0.01 · `*` p < 0.05 · `ns` p ≥ 0.05
 
@@ -203,6 +218,8 @@ Four download buttons appear below every plot:
 | SVG | Vector | — |
 | PDF | Vector (text editable in Illustrator / Inkscape) | — |
 
+Each file is rendered when you click its button, not in advance, so having four formats on offer costs nothing while you are adjusting the plot.
+
 ### Background options
 
 Below the download buttons:
@@ -214,18 +231,33 @@ Below the download buttons:
 
 ### Batch export
 
-The **📦 Batch export** expander generates one PNG (300 DPI) per sheet in the workbook and bundles them into a single ZIP file. All current sidebar settings (plot type, colours, fonts, figure size) are applied to every sheet; statistics are not run in batch mode.
+The **📦 Batch export** expander generates one PNG (300 DPI) per sheet in the workbook and bundles them into a single ZIP file. All current sidebar settings are applied to every sheet — including axis limits, tick styling and line options — so the exported figures match the preview. Statistics are not run in batch mode.
+
+---
+
+## Panel mode
+
+The **🔲 Panel mode** toggle at the top of the sidebar builds a single publication figure containing several plots in a grid. Click a panel button to edit that slot: the ordinary Data / Plot / Style / Stats tabs then apply to it. Each slot keeps its own sheet, condition filter, ordering, styling and significance brackets, and can be set to *Empty* to leave a gap for a figure you will paste in later. Panel labels (A B C…, i ii iii…, or your own text), grid size, figure size and spacing are under **Layout**.
+
+Batch export is hidden in panel mode — it produces one figure per sheet, which has no meaning for a composed panel.
 
 ---
 
 ## Project structure
 
 ```
-app.py        # Streamlit entry point — all UI widgets and wiring
+app.py        # Entry point — loads the workbook and assembles the figure
+settings.py   # Durable store for every sidebar setting
+figspec.py    # Settings → plotting arguments (shared by preview, panels, batch)
+dataio.py     # Cached workbook access + DataFrame reshaping
 parser.py     # Excel → tidy long-format DataFrame
 plotter.py    # DataFrame → matplotlib Figure
+panel.py      # Multi-panel figure composition
 stats.py      # Statistical tests + significance bar drawing
+presets.py    # Settings schema + preset files
 utils.py      # Colour palettes, figure export helpers
+ui/           # All Streamlit widgets, one module per sidebar tab
+tests/        # Regression suite
 data/         # Example files (E24_Analysis.xlsx, 2025-09-22_results_F43.xlsx)
 ```
 
@@ -234,10 +266,10 @@ data/         # Example files (E24_Analysis.xlsx, 2025-09-22_results_F43.xlsx)
 ## Requirements
 
 ```
-streamlit>=1.35
+streamlit>=1.41
 pandas>=2.0
 openpyxl>=3.1
-matplotlib>=3.8
+matplotlib>=3.7
 seaborn>=0.13
 scipy>=1.10
 pingouin>=0.5
@@ -250,4 +282,12 @@ Install everything at once:
 pip install -e .
 # or
 pip install -r requirements.txt
+```
+
+## Tests
+
+```bash
+python tests/test_regressions.py     # no pytest required
+# or
+pip install -e ".[dev]" && pytest
 ```
