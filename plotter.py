@@ -36,6 +36,32 @@ _DEFAULTS = dict(
 def make_figure(
     df: pd.DataFrame,
     *,
+    fig_width: float = 10.0,
+    fig_height: float = 6.0,
+    ylim: tuple | None = None,
+    xlim: tuple | None = None,
+    **kwargs,
+) -> matplotlib.figure.Figure:
+    """
+    Create a Figure with a single Axes, draw the plot on it, and return the Figure.
+
+    Thin wrapper around `draw_plot`: owns figure creation, tight_layout, and
+    final axis-limit application. All other plotting kwargs are forwarded.
+
+    Use `draw_plot(ax, df, **kwargs)` directly when drawing into an existing
+    axes (e.g. one panel of a multi-panel figure).
+    """
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+    draw_plot(ax, df, **kwargs)
+    fig.tight_layout()
+    _apply_axis_limits(ax, ylim=ylim, xlim=xlim)
+    return fig
+
+
+def draw_plot(
+    ax: matplotlib.axes.Axes,
+    df: pd.DataFrame,
+    *,
     # Plot type
     plot_type: str = "bar",          # "bar" | "box" | "violin"
     error_bar: str = "sd",           # "sd" | "sem" | "ci95"  (bar only)
@@ -59,9 +85,6 @@ def make_figure(
     legend_title: str = "Treatment",
     show_legend: bool = True,
     legend_inside: bool = False,
-    # Figure size
-    fig_width: float = 10.0,
-    fig_height: float = 6.0,
     # Typography
     font_family: str = "sans-serif",
     font_scale: float = 1.0,          # global scale (used when fontsizes is empty)
@@ -72,8 +95,6 @@ def make_figure(
     spines: str = "open",             # "open" | "all" | "none"
     spine_width: float = 1.0,
     y_format: str = "auto",           # "auto" | "plain" | "sci" | "SI"
-    ylim: tuple | None = None,        # (min, max), either may be None
-    xlim: tuple | None = None,
     # Line plot
     x_numeric: bool = False,       # True → proportional x spacing from numeric condition labels
     x_tick_interval: float = 0.0,  # 0 = auto; >0 → MultipleLocator(x_tick_interval)
@@ -104,17 +125,18 @@ def make_figure(
     show_pvalue: bool = False,
     show_significance: bool = True,
     show_fold_change: bool = False,
-) -> matplotlib.figure.Figure:
+) -> None:
     """
-    Render *df* as a grouped bar / box / violin plot with optional
-    overlaid individual data points and significance annotations.
-    Returns the Figure (not shown or saved — caller decides what to do).
+    Render *df* as a grouped bar / box / violin / line plot on *ax*.
+
+    Does NOT create a figure, call tight_layout, or apply axis limits — the
+    caller owns those (so panel mode can compose multiple plots into one
+    figure). Use `make_figure` for the single-plot convenience wrapper.
     """
     if df.empty:
-        fig, ax = plt.subplots(figsize=(fig_width, fig_height))
         ax.text(0.5, 0.5, "No data to display", ha="center", va="center",
                 transform=ax.transAxes, fontsize=14, color="gray")
-        return fig
+        return
 
     # ------------------------------------------------------------------
     # Typography setup
@@ -151,8 +173,6 @@ def make_figure(
             df["condition"] = df["condition"].cat.remove_unused_categories()
         if hasattr(df["treatment"], "cat"):
             df["treatment"] = df["treatment"].cat.remove_unused_categories()
-
-    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
 
     # ------------------------------------------------------------------
     # Grid (draw before bars so bars sit on top)
@@ -390,18 +410,7 @@ def make_figure(
             ax.tick_params(axis="x", which="minor", direction=tick_direction,
                            length=minor_tick_length, width=minor_tick_width, bottom=True)
 
-        fig.tight_layout()
-        if ylim is not None:
-            lo, hi = ylim
-            cur_lo, cur_hi = ax.get_ylim()
-            ax.set_ylim(lo if lo is not None else cur_lo,
-                        hi if hi is not None else cur_hi)
-        if xlim is not None:
-            lo, hi = xlim
-            cur_lo, cur_hi = ax.get_xlim()
-            ax.set_xlim(lo if lo is not None else cur_lo,
-                        hi if hi is not None else cur_hi)
-        return fig
+        return
 
     else:
         raise ValueError(f"Unknown plot_type: {plot_type!r}")
@@ -510,10 +519,17 @@ def make_figure(
             show_fold_change=show_fold_change,
         )
 
-    # ------------------------------------------------------------------
-    # Axis limits — applied after tight_layout so it cannot re-expand them
-    # ------------------------------------------------------------------
-    fig.tight_layout()
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _apply_axis_limits(
+    ax: matplotlib.axes.Axes,
+    *,
+    ylim: tuple | None = None,
+    xlim: tuple | None = None,
+) -> None:
+    """Apply ylim/xlim, allowing either bound to be None (keep current)."""
     if ylim is not None:
         lo, hi = ylim
         cur_lo, cur_hi = ax.get_ylim()
@@ -524,12 +540,7 @@ def make_figure(
         cur_lo, cur_hi = ax.get_xlim()
         ax.set_xlim(lo if lo is not None else cur_lo,
                     hi if hi is not None else cur_hi)
-    return fig
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 def _errorbar_arg(error_bar: str):
     return {"sd": ("sd", 1), "sem": ("se", 1), "ci95": ("ci", 95)}.get(error_bar, ("sd", 1))

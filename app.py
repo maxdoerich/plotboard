@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import streamlit as st
 
+import panel as xpanel
 import parser as xparser
 import plotter
 import presets as xpresets
@@ -131,6 +132,189 @@ for _k, _v in xpresets.DEFAULTS.items():
     if _k not in st.session_state:
         st.session_state[_k] = _v
 
+# Seed panel-mode layout keys (ph_*) — these live in panel.py, not preset DEFAULTS.
+for _k, _v in xpanel.PANEL_DEFAULTS.items():
+    if _k not in st.session_state:
+        st.session_state[_k] = _v
+
+
+# ---------------------------------------------------------------------------
+# Panel mode — per-panel state snapshot/restore helpers
+#
+# A "panel" is a dict that captures everything we need to re-render one slot
+# of a multi-panel figure: mode (plot|empty), sheet, filter selection, all
+# ps_* keys, custom palette colors, and the panel's title text.
+#
+# At any moment, the *active* panel's state is mirrored into the live ps_*
+# session_state keys so that the sidebar widgets edit it transparently. When
+# the user clicks a different panel button, we snapshot the live ps_* state
+# back into the old panel and load the new panel's state into ps_*.
+# ---------------------------------------------------------------------------
+
+_CP_MAX = 32   # copy this many color-picker keys cp_0..cp_{N-1} per panel snapshot
+
+
+def _new_panel_from_current() -> dict:
+    """Capture current ps_* + sheet + filter + cp_* into a fresh panel dict."""
+    p: dict = {"mode": "plot"}
+    for _key in xpresets.DEFAULTS:
+        p[_key] = st.session_state.get(_key, xpresets.DEFAULTS[_key])
+    p["sheet"] = st.session_state.get("_sheet_select")
+    p["filter_conditions"] = list(st.session_state.get("filter_conditions") or [])
+    p["cp"] = [st.session_state.get(f"cp_{_i}", "") for _i in range(_CP_MAX)]
+    p["_title"] = st.session_state.get("_panel_title_input", "")
+    p["label"] = ""
+    return p
+
+
+def _capture_active_panel() -> None:
+    """Mirror live widget state → panels[active]. Idempotent; safe to call often."""
+    if not st.session_state.get("_panel_mode"):
+        return
+    panels = st.session_state.get("panels")
+    idx = int(st.session_state.get("_active_panel_idx", 0))
+    if not panels or idx >= len(panels):
+        return
+    p = panels[idx]
+    if p.get("mode") == "empty":
+        return
+    for _key in xpresets.DEFAULTS:
+        if _key in st.session_state:
+            p[_key] = st.session_state[_key]
+    p["sheet"] = st.session_state.get("_sheet_select")
+    p["filter_conditions"] = list(st.session_state.get("filter_conditions") or [])
+    p["cp"] = [st.session_state.get(f"cp_{_i}", "") for _i in range(_CP_MAX)]
+    p["_title"] = st.session_state.get("_panel_title_input", "")
+
+
+def _restore_panel_to_widgets(idx: int) -> None:
+    """Load panels[idx] into live ps_* + sheet + filter + cp_* + title widgets.
+
+    Caller is responsible for st.rerun() so the slider-init quirk doesn't bite.
+    """
+    panels = st.session_state.get("panels")
+    if not panels or idx >= len(panels):
+        return
+    p = panels[idx]
+    if p.get("mode") == "empty":
+        return
+    for _key in xpresets.DEFAULTS:
+        if _key in p:
+            st.session_state[_key] = p[_key]
+    if "sheet" in p and p["sheet"]:
+        st.session_state["_sheet_select"] = p["sheet"]
+    if "filter_conditions" in p:
+        st.session_state["filter_conditions"] = list(p["filter_conditions"])
+    for _i, _c in enumerate(p.get("cp", [])):
+        if _c:
+            st.session_state[f"cp_{_i}"] = _c
+    st.session_state["_panel_title_input"] = p.get("_title", "")
+
+
+def _resize_panels(n_target: int) -> None:
+    """Pad panels with copies of current state, or truncate from the end."""
+    panels = st.session_state.setdefault("panels", [])
+    while len(panels) < n_target:
+        panels.append(_new_panel_from_current())
+    while len(panels) > n_target:
+        panels.pop()
+
+
+def _parse_lim_str(s) -> float | None:
+    """Parse "1.5" → 1.5 ; "" → None ; non-numeric → None."""
+    if s is None:
+        return None
+    s = str(s).strip()
+    if not s:
+        return None
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def _draw_kwargs_from_panel(p: dict, treatments_list: list[str], sheet_name: str) -> dict:
+    """Translate a panel's stored ps_* dict into draw_plot kwargs."""
+    n_t = len(treatments_list)
+    pal_name = p.get("ps_palette_name", "iGEM")
+    if pal_name == "Custom":
+        _cps = p.get("cp", []) or []
+        pal = [c for c in _cps[:n_t] if c]
+        if len(pal) < n_t:
+            pal = utils.get_palette("iGEM", n_t)
+    else:
+        pal = utils.get_palette(pal_name, n_t)
+
+    if p.get("ps_font_mode") == "Per element":
+        fontsizes_p: dict | None = {
+            "title":      int(p.get("ps_fs_title", 14)),
+            "axis_label": int(p.get("ps_fs_axis", 12)),
+            "tick":       int(p.get("ps_fs_tick", 10)),
+            "legend":     int(p.get("ps_fs_legend", 10)),
+        }
+        font_scale_p = 1.0
+    else:
+        fontsizes_p = None
+        font_scale_p = float(p.get("ps_font_scale", 1.0))
+
+    plot_full = p.get("ps_plot_type", "bar+strip")
+    base_p = plot_full.split("+")[0]
+
+    _tick_adv = int(p.get("ps_tick_fontsize_adv", 10))
+    eff_tick_fs = float(_tick_adv) if _tick_adv != 10 else (
+        fontsizes_p.get("tick") if fontsizes_p else None
+    )
+
+    title_p = (p.get("_title") or "").strip() or sheet_name or ""
+
+    return dict(
+        plot_type=base_p,
+        error_bar=p.get("ps_error_bar", "sd"),
+        cap_size=p.get("ps_cap_size", 0.08),
+        show_points=p.get("ps_show_points", True),
+        point_size=p.get("ps_point_size", 4.0),
+        point_alpha=p.get("ps_point_alpha", 0.7),
+        log_scale=p.get("ps_log_scale", False),
+        show_grid=p.get("ps_show_grid", False),
+        palette=pal,
+        bar_edge_width=p.get("ps_bar_edge_width", 0.6),
+        bar_edge_color=p.get("ps_bar_edge_color", "#000000"),
+        bar_alpha=p.get("ps_bar_alpha", 1.0),
+        bar_gap=p.get("ps_bar_gap", 0.0),
+        title=title_p,
+        xlabel=p.get("ps_xlabel", "Condition"),
+        ylabel=(p.get("ps_ylabel") or "").strip() or sheet_name or "Value",
+        legend_title=p.get("ps_leg_title", "Treatment"),
+        show_legend=p.get("ps_show_legend", True),
+        legend_inside=p.get("ps_legend_inside", False),
+        font_family=p.get("ps_font_family", "sans-serif"),
+        font_scale=font_scale_p,
+        fontsizes=fontsizes_p,
+        tick_rotation=p.get("ps_tick_rotation", 40),
+        tick_fontsize=eff_tick_fs,
+        spines=p.get("ps_spines", "open"),
+        spine_width=p.get("ps_spine_width", 1.0),
+        y_format=p.get("ps_y_format", "auto"),
+        x_numeric=p.get("ps_x_numeric", False),
+        x_tick_interval=p.get("ps_x_tick_interval", 0.0),
+        y_tick_interval=p.get("ps_y_tick_interval", 0.0),
+        error_style=p.get("ps_error_style", "band"),
+        line_width=p.get("ps_line_width", 1.5),
+        marker_style=p.get("ps_marker_style", "o"),
+        marker_size=p.get("ps_marker_size", 6.0),
+        x_suffix=p.get("ps_x_suffix", ""),
+        trendline=p.get("ps_trendline", "none"),
+        trendline_source=p.get("ps_trendline_source", "means"),
+        trendline_mode=p.get("ps_trendline_mode", "overlay"),
+        tick_direction=p.get("ps_tick_direction", "out"),
+        major_tick_length=p.get("ps_major_tick_length", 4.0),
+        major_tick_width=p.get("ps_major_tick_width", 0.8),
+        minor_ticks_y=int(p.get("ps_minor_ticks_y", 0)),
+        minor_ticks_x=int(p.get("ps_minor_ticks_x", 0)),
+        minor_tick_length=p.get("ps_minor_tick_length", 2.0),
+        minor_tick_width=p.get("ps_minor_tick_width", 0.6),
+    )
+
 # ---------------------------------------------------------------------------
 # If no file: show instructions and stop
 # ---------------------------------------------------------------------------
@@ -207,6 +391,141 @@ anova_table: pd.DataFrame | None = None
 # ---------------------------------------------------------------------------
 
 with st.sidebar:
+    # =========================================================
+    # Panel mode — toggle, layout, panel selector
+    # Lives ABOVE the tabs so the user can see it regardless of
+    # which tab is open. The tabs always edit the *active panel*.
+    # =========================================================
+    st.divider()
+    panel_mode = st.toggle(
+        "🔲 Panel mode (multi-plot figure)",
+        key="_panel_mode",
+        help="Build a publication panel: a single figure containing several "
+             "plots arranged in a grid. Click a panel button to edit it.",
+    )
+
+    if panel_mode:
+        # Initialise panel list on first activation so panel 0 = current config.
+        if not st.session_state.get("panels"):
+            st.session_state["panels"] = [_new_panel_from_current()]
+            st.session_state["_active_panel_idx"] = 0
+
+        # ---- Layout controls (rows × cols, figure size, spacing, labels) ----
+        with st.expander("Layout", expanded=False):
+            col_r, col_c = st.columns(2)
+            with col_r:
+                ph_rows = st.number_input("Rows", min_value=1, max_value=6,
+                                          key="ph_rows", step=1)
+            with col_c:
+                ph_cols = st.number_input("Cols", min_value=1, max_value=6,
+                                          key="ph_cols", step=1)
+            col_fw, col_fh = st.columns(2)
+            with col_fw:
+                ph_fig_width = st.slider("Width (in)", 4, 24,
+                                         key="ph_fig_width")
+            with col_fh:
+                ph_fig_height = st.slider("Height (in)", 3, 18,
+                                          key="ph_fig_height")
+            col_ws, col_hs = st.columns(2)
+            with col_ws:
+                ph_wspace = st.slider("Horizontal gap", 0.0, 1.5,
+                                      key="ph_wspace", step=0.05)
+            with col_hs:
+                ph_hspace = st.slider("Vertical gap", 0.0, 1.5,
+                                      key="ph_hspace", step=0.05)
+
+            st.caption("Panel labels")
+            ph_label_style = st.selectbox(
+                "Label style", xpanel.LABEL_STYLES,
+                key="ph_label_style",
+                format_func=lambda s: xpanel.LABEL_STYLE_DISPLAY[s],
+            )
+            col_lfs, col_lfw = st.columns(2)
+            with col_lfs:
+                ph_label_fontsize = st.slider("Label size", 8, 32,
+                                              key="ph_label_fontsize")
+            with col_lfw:
+                ph_label_fontweight = st.selectbox(
+                    "Weight",
+                    ["normal", "bold"],
+                    key="ph_label_fontweight",
+                )
+            col_lx, col_ly = st.columns(2)
+            with col_lx:
+                ph_label_x_offset = st.slider("Label X offset", -0.5, 0.5,
+                                              key="ph_label_x_offset", step=0.01)
+            with col_ly:
+                ph_label_y_offset = st.slider("Label Y offset", 0.5, 1.5,
+                                              key="ph_label_y_offset", step=0.01)
+
+        # ---- Resize panels list if rows/cols changed ----
+        n_target = int(ph_rows) * int(ph_cols)
+        _resize_panels(n_target)
+        if int(st.session_state.get("_active_panel_idx", 0)) >= n_target:
+            st.session_state["_active_panel_idx"] = 0
+
+        # ---- Panel selector grid ----
+        st.caption("Panels — click to edit")
+        active_idx = int(st.session_state.get("_active_panel_idx", 0))
+        panels_state = st.session_state["panels"]
+        for r in range(int(ph_rows)):
+            cols_btns = st.columns(int(ph_cols))
+            for c in range(int(ph_cols)):
+                idx = r * int(ph_cols) + c
+                if idx >= n_target:
+                    continue
+                lbl = xpanel.panel_label(idx, ph_label_style) or f"#{idx + 1}"
+                p_state = panels_state[idx] if idx < len(panels_state) else {}
+                if p_state.get("mode") == "empty":
+                    btn_caption = f"{lbl} ∅"
+                else:
+                    btn_caption = lbl
+                if cols_btns[c].button(
+                    btn_caption,
+                    key=f"_panel_btn_{idx}",
+                    type="primary" if idx == active_idx else "secondary",
+                    use_container_width=True,
+                ):
+                    if idx != active_idx:
+                        _capture_active_panel()
+                        st.session_state["_active_panel_idx"] = idx
+                        _restore_panel_to_widgets(idx)
+                        st.rerun()
+
+        # ---- Active-panel slot type (Plot / Empty) ----
+        cur_panel = panels_state[active_idx]
+        cur_label_default = xpanel.panel_label(active_idx, ph_label_style)
+        st.caption(
+            f"Editing **panel {cur_label_default or active_idx + 1}** "
+            f"({active_idx + 1}/{n_target})"
+        )
+        slot_mode = st.radio(
+            "Slot type",
+            ["plot", "empty"],
+            key=f"_panel_slot_mode_{active_idx}",
+            horizontal=True,
+            index=0 if cur_panel.get("mode", "plot") == "plot" else 1,
+            format_func=lambda s: {"plot": "Plot", "empty": "Empty (placeholder)"}[s],
+        )
+        if slot_mode != cur_panel.get("mode", "plot"):
+            cur_panel["mode"] = slot_mode
+            # Switching to plot: re-snapshot current widget state so the panel
+            # has a valid config; switching to empty: just flag it.
+            if slot_mode == "plot":
+                _capture_active_panel()
+            st.rerun()
+
+        # Custom label override for the active panel (empty = use style)
+        custom_label = st.text_input(
+            "Custom label (empty = use style)",
+            value=cur_panel.get("label", ""),
+            key=f"_panel_custom_label_{active_idx}",
+            placeholder=cur_label_default or "(none)",
+        )
+        cur_panel["label"] = custom_label
+
+        st.divider()
+
     tab_data, tab_plot, tab_style, tab_stats = st.tabs(["Data", "Plot", "Style", "Stats"])
 
     # =========================================================
@@ -387,8 +706,20 @@ with st.sidebar:
         st.divider()
         st.caption("Labels")
         default_title = f"{file_label}  ·  {sheet}" if file_label else sheet
-        # Title is intentionally NOT preset-keyed — it's file/sheet specific.
-        title = st.text_input("Title", value=default_title)
+        if panel_mode:
+            # In panel mode, each panel persists its own title in panels[i]["_title"].
+            # The widget mirrors that via _panel_title_input. Empty = auto from sheet.
+            title = (
+                st.text_input(
+                    "Title (empty = auto)",
+                    key="_panel_title_input",
+                    placeholder=default_title,
+                ).strip()
+                or default_title
+            )
+        else:
+            # Single mode: keep the original behaviour (not preset-keyed, follows sheet).
+            title = st.text_input("Title", value=default_title)
         xlabel = st.text_input("X-axis label", key="ps_xlabel")
         # ylabel defaults to the sheet name on first load; preset overrides after that.
         if "ps_ylabel" not in st.session_state or st.session_state["ps_ylabel"] == "":
@@ -648,10 +979,15 @@ with st.sidebar:
     # TAB: Stats — statistical tests and bracket styling
     # =========================================================
     with tab_stats:
+        if panel_mode:
+            st.info("Statistical brackets are not yet supported in panel mode. "
+                    "Switch off panel mode to run tests on a single plot.")
         if _base_type == "line":
             st.info("Statistical annotations are not available for line plots.")
         run_stats = st.checkbox("Run statistical tests", key="ps_run_stats",
-                                disabled=_base_type == "line")
+                                disabled=(_base_type == "line") or panel_mode)
+        if panel_mode:
+            run_stats = False
         test_mode    = _ps("ps_test_mode")
         compare_axis = _ps("ps_compare_axis")
         show_ns      = True
@@ -862,31 +1198,32 @@ def _build_fig_for_sheet(sheet_name: str) -> matplotlib.figure.Figure | None:
     return fig
 
 
-with st.expander("📦 Batch export — plot all sheets", expanded=False):
-    st.caption(
-        "Generates one PNG (300 DPI) per sheet and bundles them into a ZIP archive. "
-        "Plot settings from the sidebar are applied to all sheets."
-    )
-    if st.button("Generate ZIP of all sheets"):
-        zip_buf = io.BytesIO()
-        with zipfile.ZipFile(zip_buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-            progress = st.progress(0, text="Plotting…")
-            for idx, sname in enumerate(all_sheets):
-                progress.progress((idx + 1) / len(all_sheets), text=f"Plotting {sname}…")
-                fig_s = _build_fig_for_sheet(sname)
-                if fig_s is None:
-                    continue
-                png_bytes = utils.fig_to_bytes(fig_s, "png", dpi=300)
-                zf.writestr(f"{sname}.png", png_bytes)
-                plt.close(fig_s)
-            progress.empty()
-        zip_buf.seek(0)
-        st.download_button(
-            "⬇️ Download ZIP",
-            data=zip_buf.read(),
-            file_name=f"{file_label.replace('.xlsx','')}_all_sheets.zip",
-            mime="application/zip",
+if not panel_mode:
+    with st.expander("📦 Batch export — plot all sheets", expanded=False):
+        st.caption(
+            "Generates one PNG (300 DPI) per sheet and bundles them into a ZIP archive. "
+            "Plot settings from the sidebar are applied to all sheets."
         )
+        if st.button("Generate ZIP of all sheets"):
+            zip_buf = io.BytesIO()
+            with zipfile.ZipFile(zip_buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                progress = st.progress(0, text="Plotting…")
+                for idx, sname in enumerate(all_sheets):
+                    progress.progress((idx + 1) / len(all_sheets), text=f"Plotting {sname}…")
+                    fig_s = _build_fig_for_sheet(sname)
+                    if fig_s is None:
+                        continue
+                    png_bytes = utils.fig_to_bytes(fig_s, "png", dpi=300)
+                    zf.writestr(f"{sname}.png", png_bytes)
+                    plt.close(fig_s)
+                progress.empty()
+            zip_buf.seek(0)
+            st.download_button(
+                "⬇️ Download ZIP",
+                data=zip_buf.read(),
+                file_name=f"{file_label.replace('.xlsx','')}_all_sheets.zip",
+                mime="application/zip",
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -919,70 +1256,160 @@ if run_stats and stat_results_all is not None and not stat_results_all.empty:
     stat_results = _selected if not _selected.empty else None
 
 # ---------------------------------------------------------------------------
-# Main area — current sheet figure
+# Main area — current sheet figure (single mode) OR panel grid (panel mode)
 # ---------------------------------------------------------------------------
 
-fig = plotter.make_figure(
-    df_plot,
-    plot_type=_base_type,
-    error_bar=error_bar,
-    cap_size=cap_size,
-    show_points=show_points,
-    point_size=point_size,
-    point_alpha=point_alpha,
-    log_scale=log_scale,
-    show_grid=show_grid,
-    palette=palette,
-    bar_edge_width=bar_edge_width,
-    bar_edge_color=bar_edge_color,
-    bar_alpha=bar_alpha,
-    bar_gap=bar_gap,
-    title=title,
-    xlabel=xlabel,
-    ylabel=ylabel,
-    legend_title=leg_title,
-    show_legend=show_legend,
-    legend_inside=legend_inside,
-    fig_width=fig_width,
-    fig_height=fig_height,
-    font_family=font_family,
-    font_scale=font_scale,
-    fontsizes=fontsizes,
-    tick_rotation=tick_rotation,
-    tick_fontsize=_effective_tick_fs,
-    spines=spines,
-    spine_width=spine_width,
-    y_format=y_format,
-    ylim=ylim,
-    xlim=xlim,
-    x_numeric=x_numeric,
-    x_tick_interval=x_tick_interval,
-    y_tick_interval=y_tick_interval,
-    error_style=error_style,
-    line_width=line_width,
-    marker_style=marker_style,
-    marker_size=marker_size,
-    x_suffix=x_suffix,
-    trendline=trendline,
-    trendline_source=trendline_source,
-    trendline_mode=trendline_mode,
-    tick_direction=_ps("ps_tick_direction"),
-    major_tick_length=_ps("ps_major_tick_length"),
-    major_tick_width=_ps("ps_major_tick_width"),
-    minor_ticks_y=int(_ps("ps_minor_ticks_y")),
-    minor_ticks_x=int(_ps("ps_minor_ticks_x")),
-    minor_tick_length=_ps("ps_minor_tick_length"),
-    minor_tick_width=_ps("ps_minor_tick_width"),
-    stat_results=stat_results if _base_type != "line" else None,
-    show_ns=show_ns,
-    test_mode=test_mode,
-    compare_axis=compare_axis,
-    bracket_linewidth=bracket_linewidth,
-    bracket_fontsize=bracket_fontsize,
-    show_pvalue=show_pvalue,
-    show_significance=show_significance,
-    show_fold_change=show_fold_change,
-)
+# Sync live widget state into the active panel before rendering, so any tweaks
+# the user just made are reflected in the panel grid output.
+_capture_active_panel()
+
+
+def _build_panel_grid_figure() -> matplotlib.figure.Figure:
+    """Compose the multi-panel figure from session_state["panels"]."""
+    rows_n = int(st.session_state.get("ph_rows", 2))
+    cols_n = int(st.session_state.get("ph_cols", 2))
+    n_total = rows_n * cols_n
+
+    panels_state = st.session_state.get("panels", []) or []
+    panels_render: list[dict] = []
+
+    for i in range(n_total):
+        p = panels_state[i] if i < len(panels_state) else {"mode": "empty"}
+        mode = p.get("mode", "plot")
+        if mode == "empty":
+            panels_render.append({"mode": "empty", "label": p.get("label", "")})
+            continue
+
+        # Resolve sheet for this panel (clamp invalid selections).
+        sname = p.get("sheet") or all_sheets[0]
+        if sname not in all_sheets:
+            sname = all_sheets[0]
+        d_panel = _load_sheet(file_bytes, sname)
+        if d_panel.empty:
+            panels_render.append({"mode": "plot", "df": d_panel, "config": {},
+                                  "label": p.get("label", "")})
+            continue
+
+        d_conds = (
+            list(d_panel["condition"].cat.categories)
+            if hasattr(d_panel["condition"], "cat")
+            else list(d_panel["condition"].unique())
+        )
+        d_treats = (
+            list(d_panel["treatment"].cat.categories)
+            if hasattr(d_panel["treatment"], "cat")
+            else list(d_panel["treatment"].unique())
+        )
+
+        sel_p = p.get("filter_conditions") or d_conds
+        sel_p = [c for c in sel_p if c in d_conds] or d_conds
+        if sel_p != d_conds:
+            d_panel = d_panel[d_panel["condition"].isin(sel_p)].copy()
+            if hasattr(d_panel["condition"], "cat"):
+                d_panel["condition"] = d_panel["condition"].cat.remove_unused_categories()
+            d_conds = sel_p
+
+        d_panel["condition"] = pd.Categorical(d_panel["condition"], categories=d_conds, ordered=True)
+        d_panel["treatment"] = pd.Categorical(d_panel["treatment"], categories=d_treats, ordered=True)
+
+        cfg = _draw_kwargs_from_panel(p, d_treats, sname)
+
+        ylim_p = (_parse_lim_str(p.get("ps_ymin_str")), _parse_lim_str(p.get("ps_ymax_str")))
+        xlim_p = (_parse_lim_str(p.get("ps_xmin_str")), _parse_lim_str(p.get("ps_xmax_str")))
+        if all(v is None for v in ylim_p):
+            ylim_p = None
+        if all(v is None for v in xlim_p):
+            xlim_p = None
+
+        panels_render.append({
+            "mode": "plot",
+            "df": d_panel,
+            "config": cfg,
+            "ylim": ylim_p,
+            "xlim": xlim_p,
+            "label": p.get("label", ""),
+        })
+
+    return xpanel.make_panel_figure(
+        panels_render,
+        rows=rows_n,
+        cols=cols_n,
+        fig_width=float(st.session_state.get("ph_fig_width", 12)),
+        fig_height=float(st.session_state.get("ph_fig_height", 9)),
+        wspace=float(st.session_state.get("ph_wspace", 0.30)),
+        hspace=float(st.session_state.get("ph_hspace", 0.40)),
+        label_style=st.session_state.get("ph_label_style", "A"),
+        label_fontsize=float(st.session_state.get("ph_label_fontsize", 16)),
+        label_fontweight=st.session_state.get("ph_label_fontweight", "bold"),
+        label_x_offset=float(st.session_state.get("ph_label_x_offset", -0.12)),
+        label_y_offset=float(st.session_state.get("ph_label_y_offset", 1.03)),
+    )
+
+
+if panel_mode:
+    fig = _build_panel_grid_figure()
+else:
+    fig = plotter.make_figure(
+        df_plot,
+        plot_type=_base_type,
+        error_bar=error_bar,
+        cap_size=cap_size,
+        show_points=show_points,
+        point_size=point_size,
+        point_alpha=point_alpha,
+        log_scale=log_scale,
+        show_grid=show_grid,
+        palette=palette,
+        bar_edge_width=bar_edge_width,
+        bar_edge_color=bar_edge_color,
+        bar_alpha=bar_alpha,
+        bar_gap=bar_gap,
+        title=title,
+        xlabel=xlabel,
+        ylabel=ylabel,
+        legend_title=leg_title,
+        show_legend=show_legend,
+        legend_inside=legend_inside,
+        fig_width=fig_width,
+        fig_height=fig_height,
+        font_family=font_family,
+        font_scale=font_scale,
+        fontsizes=fontsizes,
+        tick_rotation=tick_rotation,
+        tick_fontsize=_effective_tick_fs,
+        spines=spines,
+        spine_width=spine_width,
+        y_format=y_format,
+        ylim=ylim,
+        xlim=xlim,
+        x_numeric=x_numeric,
+        x_tick_interval=x_tick_interval,
+        y_tick_interval=y_tick_interval,
+        error_style=error_style,
+        line_width=line_width,
+        marker_style=marker_style,
+        marker_size=marker_size,
+        x_suffix=x_suffix,
+        trendline=trendline,
+        trendline_source=trendline_source,
+        trendline_mode=trendline_mode,
+        tick_direction=_ps("ps_tick_direction"),
+        major_tick_length=_ps("ps_major_tick_length"),
+        major_tick_width=_ps("ps_major_tick_width"),
+        minor_ticks_y=int(_ps("ps_minor_ticks_y")),
+        minor_ticks_x=int(_ps("ps_minor_ticks_x")),
+        minor_tick_length=_ps("ps_minor_tick_length"),
+        minor_tick_width=_ps("ps_minor_tick_width"),
+        stat_results=stat_results if _base_type != "line" else None,
+        show_ns=show_ns,
+        test_mode=test_mode,
+        compare_axis=compare_axis,
+        bracket_linewidth=bracket_linewidth,
+        bracket_fontsize=bracket_fontsize,
+        show_pvalue=show_pvalue,
+        show_significance=show_significance,
+        show_fold_change=show_fold_change,
+    )
 
 st.pyplot(fig, use_container_width=False)
 
