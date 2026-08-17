@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import re
 from contextlib import contextmanager
+from functools import lru_cache
 
 import matplotlib
 import matplotlib.patches as mpatches
@@ -607,6 +608,12 @@ _GENERIC_FAMILIES = {
 }
 
 
+@lru_cache(maxsize=None)
+def _installed_fonts() -> frozenset[str]:
+    from matplotlib import font_manager
+    return frozenset(f.name for f in font_manager.fontManager.ttflist)
+
+
 def _concrete_family(generic: str) -> list[str]:
     """Expand ``"sans-serif"`` to the theme's actual font list.
 
@@ -616,11 +623,16 @@ def _concrete_family(generic: str) -> list[str]:
     both render long after the style context has exited — so the generic name
     would quietly fall back to matplotlib's DejaVu Sans instead of the theme's
     Arial.  Resolving the list here pins the font to the artist.
+
+    Fonts that are not installed are dropped rather than passed through: they
+    resolve identically either way, but matplotlib logs a warning for each one
+    it has to skip, on every artist, on every render.
     """
     rc_key = _GENERIC_FAMILIES.get(generic)
     if rc_key is None:
         return [generic]
-    return [*matplotlib.rcParams[rc_key], generic]
+    available = _installed_fonts()
+    return [*(f for f in matplotlib.rcParams[rc_key] if f in available), generic]
 
 
 def _freeze_fonts(container, family: list[str]) -> None:
