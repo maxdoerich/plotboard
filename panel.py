@@ -16,6 +16,8 @@ matplotlib Figure with one axes per slot, automatic panel labels (A/B/C,
 
 from __future__ import annotations
 
+import warnings
+
 import matplotlib
 from matplotlib.figure import Figure
 
@@ -119,8 +121,14 @@ def make_panel_figure(
                         transform=ax.transAxes, fontsize=10, color="firebrick",
                         wrap=True)
 
-        # Single tight_layout across the whole figure, then re-apply spacing
-        fig.tight_layout()
+        # Single tight_layout across the whole figure, then re-apply spacing.
+        # The warning is captured rather than left on stderr so the app can
+        # tell the user the grid is too small for its decorations.
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            fig.tight_layout()
+        fig.layout_warning = any(
+            "tight layout" in str(w.message).lower() for w in caught)
         fig.subplots_adjust(wspace=wspace, hspace=hspace)
 
     # Per-panel ylim/xlim — applied after tight_layout so it cannot re-expand them

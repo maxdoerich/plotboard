@@ -22,6 +22,7 @@ object, which is also what lets the export buttons hold one until clicked.
 from __future__ import annotations
 
 import re
+import warnings
 from contextlib import contextmanager
 from functools import lru_cache
 
@@ -77,7 +78,15 @@ def make_figure(
         fig = Figure(figsize=(fig_width, fig_height))
         ax = fig.add_subplot(111)
         draw_plot(ax, df, **kwargs)
-        fig.tight_layout()
+        # matplotlib reports a failed layout as a warning on stderr, where the
+        # user never sees it. Capture it so the app can say what to do about
+        # it: it means the figure is too small for its decorations, which is
+        # easy to hit at journal widths with the legend outside the axes.
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            fig.tight_layout()
+        fig.layout_warning = any(
+            "tight layout" in str(w.message).lower() for w in caught)
     _apply_axis_limits(ax, ylim=ylim, xlim=xlim)
     return fig
 

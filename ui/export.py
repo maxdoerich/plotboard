@@ -1,5 +1,5 @@
 """
-ui/export.py — download buttons and the batch "plot all sheets" export.
+ui/export.py — download controls and the batch "plot all sheets" export.
 
 Export bytes are produced lazily.  ``st.download_button`` accepts a callable
 for ``data``, which Streamlit registers as a deferred file and invokes only
@@ -7,6 +7,10 @@ when the user actually clicks.  The previous version rendered PNG 300, PNG 600,
 SVG and PDF on *every* rerun — about 1.7 s of encoding per slider drag, thrown
 away unless a button happened to be clicked, and roughly nine tenths of the
 app's per-interaction latency.
+
+The four buttons and the background options live in a popover so they take one
+line under the figure instead of two rows, which keeps the plot itself higher
+on the page.
 """
 
 from __future__ import annotations
@@ -29,35 +33,25 @@ ZIP_NAME_KEY = "_batch_export_name"
 
 _FORMATS: list[tuple[str, str, str, int]] = [
     # label, format, mime, dpi
-    ("⬇️ PNG 300 DPI", "png", "image/png", 300),
-    ("⬇️ PNG 600 DPI", "png", "image/png", 600),
-    ("⬇️ SVG", "svg", "image/svg+xml", 0),
-    ("⬇️ PDF", "pdf", "application/pdf", 0),
+    ("PNG · 300 DPI", "png", "image/png", 300),
+    ("PNG · 600 DPI", "png", "image/png", 600),
+    ("SVG (vector)", "svg", "image/svg+xml", 0),
+    ("PDF (vector)", "pdf", "application/pdf", 0),
 ]
 
 
 @st.fragment
 def render_downloads(fig: matplotlib.figure.Figure, base_name: str) -> None:
-    """Background options plus the four download buttons.
+    """Download popover.
 
     A fragment, so changing the export background re-runs only this block
     instead of rebuilding the figure and re-running the whole page.
     """
-    columns = st.columns(len(_FORMATS))
-    background = st.columns([1, 1, 4])
-
-    with background[0]:
-        transparent = st.checkbox("Transparent background",
-                                  key="ps_export_transparent")
-    with background[1]:
-        st.color_picker("Background color", key="ps_export_bg",
-                        disabled=transparent, label_visibility="collapsed")
-
     export_kwargs = figspec.export_kwargs(settings.snapshot())
 
-    for column, (label, fmt, mime, dpi) in zip(columns, _FORMATS):
-        suffix = f"_{dpi}dpi" if dpi else ""
-        with column:
+    with st.popover("⬇️  Download figure", icon=":material/download:"):
+        for label, fmt, mime, dpi in _FORMATS:
+            suffix = f"_{dpi}dpi" if dpi else ""
             st.download_button(
                 label,
                 data=_deferred(fig, fmt, dpi or 300, export_kwargs),
@@ -65,6 +59,12 @@ def render_downloads(fig: matplotlib.figure.Figure, base_name: str) -> None:
                 mime=mime,
                 width="stretch",
             )
+
+        st.divider()
+        st.caption("Background")
+        transparent = st.toggle("Transparent", key="ps_export_transparent")
+        st.color_picker("Background colour", key="ps_export_bg",
+                        disabled=transparent)
 
 
 def _deferred(fig, fmt: str, dpi: int, export_kwargs: dict) -> Callable[[], bytes]:
@@ -77,7 +77,8 @@ def _deferred(fig, fmt: str, dpi: int, export_kwargs: dict) -> Callable[[], byte
 # ---------------------------------------------------------------------------
 
 def render_batch(ctx: dataio.DataContext) -> None:
-    with st.expander("📦 Batch export — plot all sheets", expanded=False):
+    with st.expander("Batch export — one figure per sheet",
+                     icon=":material/inventory_2:", expanded=False):
         st.caption(
             "Generates one PNG (300 DPI) per sheet and bundles them into a ZIP "
             "archive. The current plot settings are applied to every sheet."

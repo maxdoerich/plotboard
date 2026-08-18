@@ -51,8 +51,8 @@ DEFAULTS: dict[str, object] = {
     "ps_bar_alpha":        1.0,
     # Figure size
     "ps_bar_gap":          0.0,
-    "ps_fig_width":        11,
-    "ps_fig_height":       6,
+    "ps_fig_width":        11.0,
+    "ps_fig_height":       6.0,
     # Line plot
     "ps_x_numeric":        "auto",     # "auto" | "numeric" | "categorical"
     "ps_x_suffix":         "",
@@ -199,6 +199,10 @@ def _preset_payload(settings: dict) -> dict:
 
 def _migrate(key: str, value: object) -> object:
     """Bring a value saved by an older version up to the current schema."""
+    if key in ("ps_fig_width", "ps_fig_height") and isinstance(value, int):
+        # The size sliders became floats so that sub-inch journal widths
+        # (85 mm = 3.35 in) can be expressed; a stored int would not match.
+        return float(value)
     if key == "ps_x_numeric" and isinstance(value, bool):
         # Was a checkbox ("proportional spacing on/off"); now a three-way
         # choice.  The old False was also the default, so it maps to "auto"

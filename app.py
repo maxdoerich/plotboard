@@ -8,11 +8,14 @@ the sidebar tabs in ``ui/``, and assembles the figure from whatever they left in
 ``settings``.  The widgets themselves live in ``ui/``, the state model in
 ``settings.py``, and the settings-to-plot translation in ``figspec.py``.
 
-Run order matters in two places:
+Layout order matters in three places:
 
 *  ``settings.hydrate()`` runs before any widget so that values Streamlit culled
-   at the end of the previous run are back in place; ``settings.persist()`` runs
-   after the sidebar so the store has this run's values.
+   at the end of the previous run are back in place, and so the browser is told
+   each value; ``settings.persist()`` runs after the sidebar.
+*  The figure is the first thing in the main area. Everything optional — the
+   stats tables, the raw data, batch export — sits below it, so a settings
+   change never pushes the plot off screen.
 *  The statistics table is *rendered into* a container that sits below the plot
    but is *executed* before it, so ticking a bracket updates the plot in the
    same run rather than one interaction later.
@@ -25,8 +28,6 @@ Streamlit then loses every one of their values.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import matplotlib
 import streamlit as st
 
@@ -35,8 +36,8 @@ import figspec
 import panel as xpanel
 import plotter
 import settings
-from ui import export, panels, preview, stats_table, tab_data, tab_plot
-from ui import tab_stats, tab_style
+from ui import export, panels, preview, sidebar_top, stats_table, tab_axes
+from ui import tab_data, tab_plot, tab_stats, tab_text
 
 st.set_page_config(
     page_title="Experimental Plotter",
@@ -45,51 +46,19 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-
-# ---------------------------------------------------------------------------
-# File input
-# ---------------------------------------------------------------------------
-
-def _read_file() -> tuple[bytes | None, str]:
-    """Sidebar file input.  Returns ``(bytes, label)``."""
-    st.header("📂 Data")
-    upload = st.file_uploader("Upload .xlsx file", type=["xlsx"])
-    local_path = st.text_input(
-        "…or enter a local file path",
-        placeholder=r"C:\Users\you\data\results.xlsx",
-    )
-
-    if upload is not None:
-        # getvalue() rather than read(): it does not consume the stream, so a
-        # rerun cannot come back with an empty buffer.
-        return upload.getvalue(), upload.name
-
-    text = local_path.strip().strip('"')
-    if text:
-        path = Path(text)
-        if path.exists() and path.suffix.lower() == ".xlsx":
-            return path.read_bytes(), path.name
-        st.error("File not found or not an .xlsx file.")
-
-    return None, ""
-
-
-st.title("🔬 Experimental Results Plotter")
-st.caption(
-    "Upload a GraphPad Prism-style Excel file, configure the plot in the "
-    "sidebar, and download publication-ready figures."
-)
-
 with st.sidebar:
-    file_bytes, file_label = _read_file()
+    file_bytes, file_label = sidebar_top.render_file_input()
 
 if file_bytes is None:
+    # The full title only shows on the empty state; once a file is open the
+    # figure takes the top of the page instead of a banner.
+    st.title("🔬 Experimental Results Plotter")
     st.info(
         "**Getting started**\n\n"
         "1. Upload an Excel file using the sidebar (or enter a local path).\n"
         "2. Select the sheet to plot.\n"
         "3. Adjust the plot settings in the sidebar.\n"
-        "4. Download your figure using the buttons below the plot.\n\n"
+        "4. Download your figure using the button below the plot.\n\n"
         "**Expected data format** — one row per condition, treatments in groups "
         "of columns (treatment name in the first column of each group, replicate "
         "values in subsequent columns). This is the GraphPad Prism grouped layout."
@@ -133,7 +102,9 @@ if not all_sheets:
 selected_sheet = st.session_state.get("_sheet_select")
 st.session_state["_sheet_select"] = (
     selected_sheet if selected_sheet in all_sheets else all_sheets[0])
-current_sheet = st.session_state["_sheet_select"]
+
+with st.sidebar:
+    current_sheet = sidebar_top.render_sheet(all_sheets)
 
 df_raw = dataio.load_sheet(file_bytes, file_key, current_sheet)
 if df_raw.empty:
@@ -160,17 +131,22 @@ ctx = dataio.DataContext(
 # ---------------------------------------------------------------------------
 
 with st.sidebar:
+    sidebar_top.render_shape(ctx)
+    sidebar_top.render_presets()
+
     st.divider()
     panel_mode = panels.render_controls(ctx)
 
-    tabs = st.tabs(["Data", "Plot", "Style", "Stats"])
+    tabs = st.tabs(["Data", "Plot", "Axes", "Text", "Stats"])
     with tabs[0]:
         data_out = tab_data.render(ctx, scope=panels.scope())
     with tabs[1]:
         tab_plot.render(ctx)
     with tabs[2]:
-        tab_style.render(ctx)
+        tab_axes.render(ctx)
     with tabs[3]:
+        tab_text.render(ctx)
+    with tabs[4]:
         stats_out = tab_stats.render(ctx)
 
     # Every ps_ widget has now rendered, so the store can be brought up to date.
@@ -179,7 +155,7 @@ with st.sidebar:
 current = settings.snapshot()
 
 if not data_out["selected_conditions"]:
-    st.warning("Select at least one condition.")
+    st.warning("Select at least one condition in the Data tab.")
     st.stop()
 
 df = dataio.apply_selection(
@@ -188,27 +164,22 @@ conditions = [c for c in data_out["conditions"]
               if c in set(data_out["selected_conditions"])]
 treatments = dataio.categories(df["treatment"])
 
-if dataio.min_replicates(df) < 2:
-    st.warning("Some groups have fewer than 2 replicates — error bars and "
-               "statistical tests will be skipped for those groups.")
-
 
 # ---------------------------------------------------------------------------
 # Main area
 #
-# Containers are created in display order, then filled in dependency order:
-# the stats table is executed first because the plot needs its selection.
+# Containers are created in display order — figure first — then filled in
+# dependency order: the stats table is executed before the plot that reads it.
 # ---------------------------------------------------------------------------
 
-if not panel_mode:
-    export.render_batch(ctx)
-
-rename_slot = st.container()
 plot_slot = st.container()
 export_slot = st.container()
+notes_slot = st.container()
+rename_slot = st.container()
 anova_slot = st.container()
 table_slot = st.container()
 preview_slot = st.container()
+batch_slot = st.container()
 
 scope_key = f"{panels.scope()}::{ctx.sheet}"
 
@@ -283,6 +254,23 @@ if fig is not None:
         export.render_downloads(
             fig, f"{stem}_{'panel' if panel_mode else safe_sheet}")
 
+# Notes sit under the figure rather than above it: a warning at the top of the
+# page pushes the plot down every time the data changes.
+with notes_slot:
+    if getattr(fig, "layout_warning", False):
+        st.caption(
+            "⚠️ The figure is too small to fit everything around the axes. "
+            "Widen it, shrink the fonts, or put the legend inside the plot "
+            "(Text tab) — otherwise labels may be clipped on export."
+        )
+    if dataio.min_replicates(df) < 2:
+        st.caption("⚠️ Some groups have fewer than 2 replicates — error bars "
+                   "and statistical tests are skipped for those groups.")
+
 if data_out["show_preview"]:
     with preview_slot:
         preview.render_data(df)
+
+if not panel_mode:
+    with batch_slot:
+        export.render_batch(ctx)
