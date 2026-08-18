@@ -46,7 +46,12 @@ Rules:
 
 ## Sidebar reference
 
-### 📂 Data
+The top of the sidebar holds the controls you reach for constantly — the file,
+the sheet, and presets — and below them five tabs grouped by what they change:
+**Data** (which rows, in what order), **Plot** (the marks themselves),
+**Axes**, **Text**, and **Stats**.
+
+### 📂 Data — file & sheet (above the tabs)
 
 | Control | Description |
 |---|---|
@@ -54,9 +59,11 @@ Rules:
 | **…or enter a local file path** | Type an absolute path (e.g. `C:\data\results.xlsx`) if the file is already on disk. |
 | **Sheet** | Select which sheet of the workbook to plot. |
 
+Under the selector a line reports what actually parsed — `5 conditions · 4 treatments · 3 replicates`. Check it after switching sheets: because the Prism layout is read by column position, a stray header cell shows up here as the wrong number of treatments.
+
 ---
 
-### 💾 Presets
+### 💾 Presets (above the tabs)
 
 Save and restore all visual/style settings as named presets (stored as JSON files in `.presets/`).
 
@@ -64,15 +71,13 @@ Save and restore all visual/style settings as named presets (stored as JSON file
 |---|---|
 | **Preset dropdown** | Lists all saved presets. The current startup preset is marked with ★. |
 | **Load** | Apply the selected preset immediately. |
-| **⭐ Set as startup** | Mark the selected preset as the one loaded automatically when a new file is opened. |
-| **🗑 Delete** | Remove the selected preset permanently. |
-| **Name field + Save** | Type a name and click Save to capture all current settings as a new preset. |
+| **⋯** | Popover holding the rest: save the current settings under a name, set the selected preset as the startup one, delete it, or reset every setting back to defaults. |
 
 The **Default** preset is created automatically on first launch and always reflects the original factory settings. It cannot be accidentally overwritten — rename it if you want a customised starting point.
 
 ---
 
-### 🔍 Filter
+### 🔍 Data tab — filter & order
 
 | Control | Description |
 |---|---|
@@ -80,7 +85,7 @@ The **Default** preset is created automatically on first launch and always refle
 
 ---
 
-### 📊 Plot type
+### 📊 Plot tab
 
 | Option | Description |
 |---|---|
@@ -104,7 +109,7 @@ Settings are kept per plot type: switching to another type and back restores wha
 
 ---
 
-### 📐 Y-axis
+### 📐 Axes tab
 
 | Control | Description |
 |---|---|
@@ -118,7 +123,7 @@ Settings are kept per plot type: switching to another type and back restores wha
 
 ---
 
-### 🏷️ Labels
+### 🏷️ Text tab
 
 | Control | Description |
 |---|---|
@@ -131,7 +136,7 @@ Settings are kept per plot type: switching to another type and back restores wha
 
 ---
 
-### 🎨 Colors
+### 🎨 Colours *(Plot tab)*
 
 | Control | Description |
 |---|---|
@@ -142,16 +147,17 @@ Settings are kept per plot type: switching to another type and back restores wha
 
 ---
 
-### 📏 Figure size
+### 📏 Figure size *(Plot tab)*
 
 | Control | Description |
 |---|---|
+| **Preset** | Common publication sizes: single column (85 mm), 1.5 column (114 mm), double column (180 mm), a 16:9 slide, or square. Sets a starting width and height that you can then fine-tune. |
 | **Width / Height** | Figure dimensions in inches. |
 | **Bar gap** | Fraction of bar width used as intra-group gap. 0 = bars touching (default); 0.5 = bars at half their natural width with space between them. Does not affect strip dot or bracket positions. |
 
 ---
 
-### 📈 Statistics
+### 📈 Stats tab
 
 | Control | Description |
 |---|---|
@@ -172,7 +178,7 @@ Brackets are stacked automatically so they never overlap: non-overlapping bracke
 
 ---
 
-### 🔤 Typography
+### 🔤 Typography *(Text tab)*
 
 | Control | Description |
 |---|---|
@@ -182,7 +188,7 @@ Brackets are stacked automatically so they never overlap: non-overlapping bracke
 
 ---
 
-### ⚙️ Advanced
+### ⚙️ Ticks, frame & limits *(Axes tab)*
 
 | Control | Description |
 |---|---|
@@ -191,14 +197,14 @@ Brackets are stacked automatically so they never overlap: non-overlapping bracke
 | **Tick font size** | Overrides the tick size from the Typography section when set to a value other than 10. |
 | **Axis border style** | **Open (L-shape)** — top and right spines removed (default). **Full box** — all four borders visible. **None** — no borders. |
 | **Border / tick width** | Linewidth of axis spines and tick marks. |
-| **Y min / Y max** | Override the automatic y-axis limits. Leave blank for auto. Note: if significance brackets are enabled, they are drawn before the limit is applied — brackets outside the forced range will be clipped. |
+| **Y min / Y max** | Override the automatic y-axis limits. Leave blank for auto. Note: if significance brackets are enabled, they are drawn before the limit is applied — brackets outside the forced range will be clipped, and the app says so under the control. |
 | **X min / X max** | Override the automatic x-axis limits. |
 
 ---
 
 ### 🗂️ Data preview / Label editor
 
-Enable **Show / edit labels & raw data** to reveal three sections:
+Enable **Rename labels & show raw data** in the Data tab to reveal these sections below the figure:
 
 1. **Rename condition labels** — editable table mapping original condition names (as they appear in the Excel file) to display labels shown on the x-axis. Changes are ephemeral; the source file is never modified.
 2. **Rename treatment labels** — same for treatment names shown in the legend.
@@ -209,7 +215,7 @@ Enable **Show / edit labels & raw data** to reveal three sections:
 
 ## Export
 
-Four download buttons appear below every plot:
+A **⬇️ Download figure** button sits directly under the plot; it opens a popover with four formats:
 
 | Button | Format | DPI |
 |---|---|---|
@@ -222,7 +228,7 @@ Each file is rendered when you click its button, not in advance, so having four 
 
 ### Background options
 
-Below the download buttons:
+Inside the same popover, below the format buttons:
 
 | Control | Description |
 |---|---|
