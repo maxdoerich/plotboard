@@ -27,6 +27,11 @@ Because the store is a normal session-state value it survives culling, early
 ``st.stop()``, and hidden widgets alike.  Settings are therefore sticky:
 switching plot type away and back keeps the settings you had.
 
+``hydrate()`` re-asserts *every* setting rather than only the missing ones, so
+the browser is always told each widget's value.  Left to itself the browser
+falls back on the widget's declared default whenever it has to build the widget
+afresh, and for a slider that default is its minimum — see ``hydrate``.
+
 Rules for callers
 -----------------
 * ``hydrate()`` must run before the first ``ps_*`` widget of the run.
@@ -57,8 +62,37 @@ CP_MAX = 32
 # Lifecycle
 # ---------------------------------------------------------------------------
 
+# Settings the user types into rather than drags. These are only gap-filled,
+# never re-asserted: forcing a value onto a text box that the user may be part
+# way through editing would discard what they were typing.
+_TYPED_KEYS = frozenset({
+    "ps_title", "ps_xlabel", "ps_ylabel", "ps_leg_title", "ps_x_suffix",
+    "ps_ymin_str", "ps_ymax_str", "ps_xmin_str", "ps_xmax_str",
+})
+
+
 def hydrate() -> None:
-    """Mirror the durable store into widget keys.  Call once, before the UI."""
+    """Mirror the durable store into the widget keys.  Call once, before the UI.
+
+    Every setting is written back into ``session_state``, not just the ones
+    Streamlit dropped. That looks redundant but is the point: writing a widget's
+    key marks it as a programmatic change, and Streamlit then *tells the browser*
+    the value (``set_value`` in the widget's proto) instead of leaving the
+    browser to fall back on the widget's declared default.
+
+    That fallback is what produced the "everything jumps to its minimum" bug.
+    A slider declared as ``st.slider("Bar opacity", 0.1, 1.0, key=...)`` has a
+    default of ``0.1`` — its *minimum*. Whenever the browser had to build the
+    widget afresh — the sidebar was torn down by an ``st.stop()`` while a file
+    was being swapped, a tab remounted, the connection dropped — it had no value
+    of its own and drew the default. Bar opacity 0.1 is the washed-out,
+    desaturated plot; every other slider pinned to its low end is the rest of it.
+    One interaction then wrote those minimums back and the corruption stuck.
+
+    The value written is the *effective* one, read back through session_state
+    first, so a value the user just changed in the browser still wins: Streamlit
+    has already applied incoming widget values by the time this runs.
+    """
     store: dict[str, Any] = st.session_state.setdefault(STORE_KEY, {})
     st.session_state.setdefault(TOUCHED_KEY, set())
 
@@ -66,17 +100,38 @@ def hydrate() -> None:
     for key, default in presets.DEFAULTS.items():
         store.setdefault(key, default)
 
-    # Restore anything Streamlit culled.  Only fill gaps: a value already in
-    # session_state is either this run's callback output or a live widget value,
-    # and both are newer than the store.
-    for key, value in store.items():
-        if key not in st.session_state:
-            st.session_state[key] = value
+    for key in presets.DEFAULTS:
+        present = key in st.session_state
+        if present and key in _TYPED_KEYS:
+            store[key] = st.session_state[key]
+            continue
+        value = st.session_state[key] if present else store[key]
+        st.session_state[key] = value
+        store[key] = value
 
     # Custom palette pickers mirror the ps_custom_colors list.
     for i, colour in enumerate(store.get("ps_custom_colors") or []):
-        if colour and f"cp_{i}" not in st.session_state:
-            st.session_state[f"cp_{i}"] = colour
+        if not colour:
+            continue
+        key = f"cp_{i}"
+        st.session_state[key] = st.session_state.get(key, colour)
+
+
+def reassert(*keys: str) -> None:
+    """Force Streamlit to send these widgets' current values to the browser.
+
+    Writing a widget's key marks it as a programmatic change, which is what
+    makes Streamlit include the value in the widget's proto instead of letting
+    the browser fall back on the declared default.  Needed for any widget whose
+    default is not a sensible value to be left showing — a slider's default is
+    its minimum, and a multiselect's is an empty selection.
+
+    Only widgets outside ``presets.DEFAULTS`` need this explicitly; ``hydrate``
+    already does it for every setting.
+    """
+    for key in keys:
+        if key in st.session_state:
+            st.session_state[key] = st.session_state[key]
 
 
 def persist() -> None:

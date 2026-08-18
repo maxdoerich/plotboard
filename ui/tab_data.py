@@ -33,6 +33,9 @@ def render(ctx: dataio.DataContext, *, scope: str = "") -> dict:
     # about the two competing; the stored selection is the one we want anyway.
     default = ({} if filter_key in st.session_state
                else {"default": list(ctx.conditions)})
+    # A rebuilt multiselect falls back to an empty selection, which would leave
+    # the app reporting that no conditions are selected.
+    settings.reassert(filter_key)
     selected = st.multiselect(
         "Show conditions",
         options=ctx.conditions,

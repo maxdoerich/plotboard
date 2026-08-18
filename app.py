@@ -106,6 +106,9 @@ settings.hydrate()
 
 for key, value in xpanel.PANEL_DEFAULTS.items():
     st.session_state.setdefault(key, value)
+# Panel layout sliders default to their minimum too, so they need the same
+# push as the plot settings if the browser ever rebuilds them.
+settings.reassert(*xpanel.PANEL_DEFAULTS)
 
 
 # ---------------------------------------------------------------------------
@@ -123,9 +126,13 @@ if not all_sheets:
     st.stop()
 
 # The selectbox reads its value from session_state, so it has to hold a sheet
-# that exists in this workbook before the widget is built.
-if st.session_state.get("_sheet_select") not in all_sheets:
-    st.session_state["_sheet_select"] = all_sheets[0]
+# that exists in this workbook before the widget is built.  It is re-assigned
+# every run for the same reason settings.hydrate() re-asserts its values: a
+# selectbox the browser has to rebuild falls back to the first option, which
+# would silently plot a different sheet than the one shown as selected.
+selected_sheet = st.session_state.get("_sheet_select")
+st.session_state["_sheet_select"] = (
+    selected_sheet if selected_sheet in all_sheets else all_sheets[0])
 current_sheet = st.session_state["_sheet_select"]
 
 df_raw = dataio.load_sheet(file_bytes, file_key, current_sheet)

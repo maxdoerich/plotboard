@@ -131,6 +131,83 @@ def test_hidden_widgets_keep_their_settings():
         f"settings lost via hidden widgets: {_settings(app, *TRACKED)}")
 
 
+SLIDER_KEYS = ("ps_bar_alpha", "ps_fig_width", "ps_point_size", "ps_spine_width")
+
+
+def test_settings_are_pushed_to_the_browser():
+    """Every setting must be sent to the browser, not left to its default.
+
+    Streamlit only includes a widget's value in the message it sends when the
+    value was set programmatically that run; otherwise the browser falls back
+    on the widget's declared default. For these sliders the default is
+    min_value, so any time the browser had to rebuild the widget -- the sidebar
+    torn down by an st.stop() during a file swap, a remount, a dropped
+    connection -- it drew the minimum. ps_bar_alpha at 0.1 is the washed-out,
+    desaturated plot; one interaction then wrote the minimums back for good.
+    """
+    app = _loaded_app()
+    for key, value in (("ps_bar_alpha", 0.75), ("ps_fig_width", 17),
+                       ("ps_point_size", 9.0), ("ps_spine_width", 2.5)):
+        app.slider(key=key).set_value(value).run()
+    _assert_clean(app, "changing sliders")
+
+    for key in SLIDER_KEYS:
+        proto = app.slider(key=key).proto
+        default = list(proto.default)[0]
+        current = float(app.session_state[key])
+        assert proto.set_value or abs(default - current) < 1e-9, (
+            f"{key} is not sent to the browser and its default ({default}) "
+            f"differs from its value ({current}) -- the browser would show "
+            f"the default")
+
+
+def test_live_edits_survive_the_push():
+    """Re-asserting values must not overwrite what the user just changed."""
+    app = _loaded_app()
+    app.slider(key="ps_bar_alpha").set_value(0.75).run()
+    assert app.session_state["ps_bar_alpha"] == 0.75
+    app.slider(key="ps_bar_alpha").set_value(0.35).run()
+    assert app.session_state["ps_bar_alpha"] == 0.35, (
+        "hydrate() clobbered a live widget edit")
+
+
+def test_settings_survive_a_file_swap():
+    """Load one workbook, restyle, load another, switch sheet.
+
+    The file-swap path goes through an st.stop() when the uploader is empty,
+    which tears the whole sidebar down.
+    """
+    app = _loaded_app()
+    for key, value in (("ps_bar_alpha", 0.75), ("ps_fig_width", 17),
+                       ("ps_point_size", 9.0), ("ps_spine_width", 2.5)):
+        app.slider(key=key).set_value(value).run()
+    expected = {k: app.session_state[k] for k in SLIDER_KEYS}
+
+    other = os.path.join(PROJECT_DIR, "data", "F39_Analysis.xlsx")
+    if not os.path.exists(other):
+        return
+    app.text_input[0].set_value("")          # no file -> st.stop()
+    app.run()
+    app.text_input[0].set_value(other)       # second workbook
+    app.run()
+    _assert_clean(app, "swapping the workbook")
+
+    got = {k: app.session_state[k] for k in SLIDER_KEYS}
+    assert got == expected, f"settings lost on file swap: {got} != {expected}"
+
+    sheets = list(app.selectbox(key="_sheet_select").options)
+    app.selectbox(key="_sheet_select").set_value(sheets[2]).run()
+    _assert_clean(app, "switching sheet after a file swap")
+    got = {k: app.session_state[k] for k in SLIDER_KEYS}
+    assert got == expected, f"settings lost on the later sheet switch: {got}"
+
+    for key in SLIDER_KEYS:
+        proto = app.slider(key=key).proto
+        default = list(proto.default)[0]
+        assert proto.set_value or abs(default - float(got[key])) < 1e-9, (
+            f"{key} would render at its default after the swap")
+
+
 def test_no_rerun_calls_in_app_code():
     """The state model must not need mid-run reruns to work.
 
