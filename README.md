@@ -96,6 +96,17 @@ The **Default** preset is created automatically on first launch and always refle
 
 Settings are kept per plot type: switching to another type and back restores what you had.
 
+### Marks, points & error bars *(Plot tab)*
+
+| Control | Description |
+|---|---|
+| **Gap between groups** | Fraction of the mark's width used as a gap within one condition group. 0 = touching. Does not move the strip dots or the brackets. |
+| **Opacity / Edge width / Edge colour** *(bar only)* | Bar fill transparency and outline. |
+| **Error bar** *(bar and line)* | SD — standard deviation; SEM — standard error of the mean; 95 % CI — confidence interval. |
+| **Cap size** | Width of the horizontal cap on the error bars (0 = no caps). |
+| **Show individual data points** | Overlay a strip plot of every replicate. |
+| **Dot size / Dot opacity** | Appearance of the strip dots. |
+
 ### Line options *(line+scatter only)*
 
 | Control | Description |
@@ -113,13 +124,15 @@ Settings are kept per plot type: switching to another type and back restores wha
 
 | Control | Description |
 |---|---|
-| **Log scale** | Switches the y-axis to log₁₀. Disabled automatically if any value ≤ 0. |
-| **Y-axis gridlines** | Draws light horizontal grid lines behind the bars. |
-| **Error bar** *(bar only)* | SD — standard deviation; SEM — standard error of the mean; 95 % CI — confidence interval. |
-| **Cap size** *(bar only)* | Width of the horizontal cap on error bars (0 = no caps). |
-| **Show individual data points** | Overlay a strip plot of all replicates as black dots. |
-| **Dot size** | Diameter of the strip dots (pt). |
-| **Dot opacity** | Transparency of the strip dots (1 = opaque). |
+| **Log scale** | Switches the y-axis to log₁₀. Zero and negative values are excluded. |
+| **Horizontal gridlines** | Draws light grid lines behind the marks. |
+| **Y-axis number format** | **Auto** — matplotlib default. **Plain** — no scientific notation. **Scientific** — always ×10ⁿ. **SI prefix** — `1M`, `500k`, useful for raw luminescence counts. |
+| **Y / X min & max** | Override the automatic limits; blank means automatic. |
+| **Y / X tick interval** | Fixed spacing between ticks; 0 = automatic. |
+| **Label rotation / size** | Tick label angle and size. |
+| **Tick marks** | Expander: direction (in/out/both), major and minor length and width, and how many minor ticks sit in each interval. |
+| **Axis border** | **Open (L-shape)** — top and right spines removed (default). **Full box**. **None**. |
+| **Border / tick width** | Linewidth of the axis spines and tick marks. |
 
 ---
 
@@ -141,9 +154,6 @@ Settings are kept per plot type: switching to another type and back restores wha
 | Control | Description |
 |---|---|
 | **Palette** | Choose a preset colour scheme: **iGEM** (lab default), Tab10, Viridis, Pastel, Colorblind, Set2. Select **Custom** to assign a colour to each treatment individually. |
-| **Edge width** *(bar only)* | Thickness of the bar outline in pt. Set to 0 to remove outlines entirely. |
-| **Edge color** *(bar only)* | Colour of the bar outline. |
-| **Bar opacity** *(bar only)* | Transparency of bar fill (1 = fully opaque). |
 
 ---
 
@@ -153,7 +163,8 @@ Settings are kept per plot type: switching to another type and back restores wha
 |---|---|
 | **Preset** | Common publication sizes: single column (85 mm), 1.5 column (114 mm), double column (180 mm), a 16:9 slide, or square. Sets a starting width and height that you can then fine-tune. |
 | **Width / Height** | Figure dimensions in inches. |
-| **Bar gap** | Fraction of bar width used as intra-group gap. 0 = bars touching (default); 0.5 = bars at half their natural width with space between them. Does not affect strip dot or bracket positions. |
+
+If the figure is too small for everything around the axes — easy to hit at a single-column width with a large font scale and the legend outside — a note appears under the plot, because labels would otherwise be clipped on export.
 
 ---
 
@@ -185,20 +196,6 @@ Brackets are stacked automatically so they never overlap: non-overlapping bracke
 | **Font family** | sans-serif (default), serif, or monospace. |
 | **Font sizing — Global scale** | A single multiplier (0.5–2.5) applied to all text elements simultaneously. |
 | **Font sizing — Per element** | Set individual sizes for Title, Axis labels, Tick labels, and Legend text. |
-
----
-
-### ⚙️ Ticks, frame & limits *(Axes tab)*
-
-| Control | Description |
-|---|---|
-| **Y-axis number format** | **Auto** — matplotlib default. **Plain** — force integer / decimal notation, no scientific. **Scientific** — always use ×10ⁿ notation. **SI prefix** — display `1M`, `500k`, etc. Useful for raw luminescence counts. |
-| **Tick rotation** | Angle of x-axis tick labels in degrees (0–90). |
-| **Tick font size** | Overrides the tick size from the Typography section when set to a value other than 10. |
-| **Axis border style** | **Open (L-shape)** — top and right spines removed (default). **Full box** — all four borders visible. **None** — no borders. |
-| **Border / tick width** | Linewidth of axis spines and tick marks. |
-| **Y min / Y max** | Override the automatic y-axis limits. Leave blank for auto. Note: if significance brackets are enabled, they are drawn before the limit is applied — brackets outside the forced range will be clipped, and the app says so under the control. |
-| **X min / X max** | Override the automatic x-axis limits. |
 
 ---
 
