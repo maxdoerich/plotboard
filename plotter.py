@@ -514,13 +514,12 @@ def _draw_line(
             )
         ax.tick_params(axis="x", which="major", rotation=tick_rotation,
                        labelsize=tick_fs)
-        if tick_rotation > 0:
-            for label in ax.get_xticklabels():
-                label.set_ha("right")
+        _anchor_x_labels(ax, tick_rotation)
     else:
         ax.set_xticks(x_vals)
         ax.set_xticklabels(tick_labels, rotation=tick_rotation, fontsize=tick_fs,
                            ha="right" if tick_rotation > 0 else "center")
+        _anchor_x_labels(ax, tick_rotation)
 
 
 def _draw_legend(ax, treatments, *, palette, legend_title, show_legend,
@@ -550,6 +549,25 @@ def _draw_legend(ax, treatments, *, palette, legend_title, show_legend,
     ax.legend(handles, labels, title=legend_title, frameon=False,
               fontsize=fs["legend_fs"], title_fontsize=fs["legend_title_fs"],
               **placement)
+
+
+def _anchor_x_labels(ax, rotation: float) -> None:
+    """Rotate x tick labels about their right-hand end.
+
+    A rotated label that is centred on its tick sits half to the left and half
+    to the right of the mark it names, so with several groups it is not obvious
+    which label belongs to which. Anchoring the end of the text at the tick puts
+    the last word of each label directly under its group.
+
+    ``rotation_mode="anchor"`` is what makes this exact: without it matplotlib
+    rotates the label and then aligns its bounding *box*, which leaves the text
+    itself offset from the tick by an amount that grows with the label length.
+    """
+    if rotation <= 0:
+        return
+    for label in ax.get_xticklabels():
+        label.set_horizontalalignment("right")
+        label.set_rotation_mode("anchor")
 
 
 def _style_axes(
@@ -594,6 +612,8 @@ def _style_axes(
                    direction=tick_direction, length=major_tick_length,
                    width=major_tick_width, bottom=True,
                    labelfontfamily=font_family, **x_kw)
+    if rotate_x:
+        _anchor_x_labels(ax, tick_rotation)
     ax.tick_params(axis="y", which="major", labelsize=tick_fs,
                    direction=tick_direction, length=major_tick_length,
                    width=major_tick_width, left=True,

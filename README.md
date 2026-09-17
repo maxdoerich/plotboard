@@ -129,7 +129,7 @@ Settings are kept per plot type: switching to another type and back restores wha
 | **Y-axis number format** | **Auto** — matplotlib default. **Plain** — no scientific notation. **Scientific** — always ×10ⁿ. **SI prefix** — `1M`, `500k`, useful for raw luminescence counts. |
 | **Y / X min & max** | Override the automatic limits; blank means automatic. |
 | **Y / X tick interval** | Fixed spacing between ticks; 0 = automatic. |
-| **Label rotation / size** | Tick label angle and size. |
+| **Label rotation / size** | Tick label angle and size. Rotated labels are anchored by their right-hand end at the tick, so the end of each label sits under the group it names. |
 | **Tick marks** | Expander: direction (in/out/both), major and minor length and width, and how many minor ticks sit in each interval. |
 | **Axis border** | **Open (L-shape)** — top and right spines removed (default). **Full box**. **None**. |
 | **Border / tick width** | Linewidth of the axis spines and tick marks. |
