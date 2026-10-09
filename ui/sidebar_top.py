@@ -10,12 +10,17 @@ were the hardest to reach while the Data tab held only two widgets.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import streamlit as st
 
-import dataio
 import presets as xpresets
 import settings
+
+if TYPE_CHECKING:
+    # Annotation only: app.py imports this module before the landing page, and
+    # dataio would drag pandas, openpyxl and scipy in with it (see warmup.py).
+    import dataio
 
 PRESET_CHOICE_KEY = "_preset_choice"
 PRESET_NAME_KEY = "_preset_name_input"

@@ -24,20 +24,18 @@ There are no ``st.rerun()`` calls.  Anything that needs to change a widget-backe
 value does it from an ``on_click``/``on_change`` callback, which runs between
 runs — a mid-run rerun aborts the script before the widgets register and
 Streamlit then loses every one of their values.
+
+The plotting stack is imported only once a file is open (see ``warmup.py``):
+the landing page needs Streamlit alone, and the 5–10 s of seaborn/scipy/pandas
+imports happen in the background while the user picks a file.
 """
 
 from __future__ import annotations
 
-import matplotlib
 import streamlit as st
 
-import dataio
-import figspec
-import panel as xpanel
-import plotter
-import settings
-from ui import export, panels, preview, sidebar_top, stats_table, tab_axes
-from ui import tab_data, tab_plot, tab_stats, tab_text
+import warmup
+from ui import sidebar_top
 
 st.set_page_config(
     page_title="Experimental Plotter",
@@ -45,6 +43,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+warmup.start()
 
 with st.sidebar:
     file_bytes, file_label = sidebar_top.render_file_input()
@@ -64,6 +63,20 @@ if file_bytes is None:
         "values in subsequent columns). This is the GraphPad Prism grouped layout."
     )
     st.stop()
+
+# Not at the top of the file: these are what the warm-up thread is loading.
+# Waiting for it first means the two threads never import concurrently.
+warmup.wait()
+
+import matplotlib  # noqa: E402
+
+import dataio  # noqa: E402
+import figspec  # noqa: E402
+import panel as xpanel  # noqa: E402
+import plotter  # noqa: E402
+import settings  # noqa: E402
+from ui import export, panels, preview, stats_table, tab_axes  # noqa: E402
+from ui import tab_data, tab_plot, tab_stats, tab_text  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
