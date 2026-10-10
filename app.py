@@ -468,7 +468,25 @@ with st.sidebar:
             else:
                 trendline_source = _ps("ps_trendline_source")
                 trendline_mode   = _ps("ps_trendline_mode")
+            st.caption("Sigmoid curve")
+            sigmoid_on = st.checkbox(
+                "Plot  A(P) = A_low + (A_high − A_low) / (1 + exp((P − P50) / dP))",
+                key="ps_sigmoid",
+                help="P is the x-axis value, so use a numeric x-axis.",
+            )
+            if sigmoid_on:
+                _c1, _c2 = st.columns(2)
+                with _c1:
+                    _a_low = st.number_input("A_low", key="ps_sig_alow", format="%g")
+                    _p50 = st.number_input("P50", key="ps_sig_p50", format="%g")
+                with _c2:
+                    _a_high = st.number_input("A_high", key="ps_sig_ahigh", format="%g")
+                    _dp = st.number_input("dP", key="ps_sig_dp", format="%g")
+                sigmoid = (_a_low, _a_high, _p50, _dp)
+            else:
+                sigmoid = None
         else:
+            sigmoid = None
             x_numeric        = _ps("ps_x_numeric")
             x_suffix         = _ps("ps_x_suffix")
             x_tick_interval  = _ps("ps_x_tick_interval")
@@ -966,6 +984,7 @@ fig = plotter.make_figure(
     trendline=trendline,
     trendline_source=trendline_source,
     trendline_mode=trendline_mode,
+    sigmoid=sigmoid,
     tick_direction=_ps("ps_tick_direction"),
     major_tick_length=_ps("ps_major_tick_length"),
     major_tick_width=_ps("ps_major_tick_width"),
