@@ -1,7 +1,7 @@
-streamlit>=1.35
+streamlit>=1.41
 pandas>=2.0
 openpyxl>=3.1
-matplotlib>=3.8
+matplotlib>=3.7
 seaborn>=0.13
 scipy>=1.10
 pingouin>=0.5

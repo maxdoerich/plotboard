@@ -4,19 +4,34 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "plotboard"
-version = "0.1.0"
+version = "0.2.0"
 requires-python = ">=3.10"
 dependencies = [
-    "streamlit>=1.35",
+    # download_button accepts a callable for data= (deferred rendering) and
+    # st.fragment is used for the export block; both need a recent Streamlit.
+    "streamlit>=1.41",
     "pandas>=2.0",
     "openpyxl>=3.1",
-    "matplotlib>=3.8",
+    # tick_params(labelfontfamily=...) is used to pin tick label fonts.
+    "matplotlib>=3.7",
     "seaborn>=0.13",
     "scipy>=1.10",
     "pingouin>=0.5",
     "numpy>=1.24",
 ]
 
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[tool.setuptools]
+py-modules = [
+    "app", "dataio", "figspec", "panel", "parser",
+    "plotter", "presets", "settings", "stats", "utils",
+]
+
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["*.py"]
+include = ["ui*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

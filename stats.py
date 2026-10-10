@@ -296,7 +296,7 @@ def draw_significance_bars(
     df: pd.DataFrame,
     stat_results: pd.DataFrame,
     *,
-    show_ns: bool = False,
+    show_ns: bool = True,
     test_mode: str = "ttest",
     compare_axis: str = "conditions",   # "conditions" | "treatments"
     log_scale: bool = False,
