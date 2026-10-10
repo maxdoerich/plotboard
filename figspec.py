@@ -159,6 +159,11 @@ def draw_kwargs(
         trendline=s.get("ps_trendline", "none"),
         trendline_source=s.get("ps_trendline_source", "means"),
         trendline_mode=s.get("ps_trendline_mode", "overlay"),
+        sigmoid=(
+            (s.get("ps_sig_alow", 0.0), s.get("ps_sig_ahigh", 1.0),
+             s.get("ps_sig_p50", 1.0), s.get("ps_sig_dp", 1.0))
+            if s.get("ps_sigmoid", False) else None
+        ),
         tick_direction=s.get("ps_tick_direction", "out"),
         major_tick_length=s.get("ps_major_tick_length", 4.0),
         major_tick_width=s.get("ps_major_tick_width", 0.8),

@@ -75,6 +75,7 @@ def render(ctx: dataio.DataContext) -> None:
     if base_type == "line":
         st.divider()
         _render_line_options(ctx)
+        _render_sigmoid_options()
 
 
 # ---------------------------------------------------------------------------
@@ -222,3 +223,19 @@ def _render_line_options(ctx: dataio.DataContext) -> None:
         st.radio("Mode", ["overlay", "replace"], key="ps_trendline_mode",
                  format_func=lambda x: {"overlay": "Overlay",
                                         "replace": "Replace line"}[x])
+
+
+def _render_sigmoid_options() -> None:
+    st.caption("Sigmoid curve")
+    if not st.checkbox(
+        "Plot  A(P) = A_low + (A_high − A_low) / (1 + exp((P − P50) / dP))",
+        key="ps_sigmoid", help="P is the x-axis value, so use a numeric x-axis.",
+    ):
+        return
+    col_a, col_b = st.columns(2)
+    with col_a:
+        st.number_input("A_low", key="ps_sig_alow", format="%g")
+        st.number_input("P50", key="ps_sig_p50", format="%g")
+    with col_b:
+        st.number_input("A_high", key="ps_sig_ahigh", format="%g")
+        st.number_input("dP", key="ps_sig_dp", format="%g")

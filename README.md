@@ -117,6 +117,7 @@ Settings are kept per plot type: switching to another type and back restores wha
 | **Error style** | Shaded band or error bars. |
 | **Line width / Marker / Marker size** | Line and point appearance. |
 | **Trend line** | Smooth (through points), linear, polynomial 2/3, exponential, logarithmic, power law, or smoothing spline. Fit from group means or all replicates; overlay on the connecting line or replace it. |
+| **Sigmoid curve** | Plots A(P) = A_low + (A_high − A_low) / (1 + exp((P − P50) / dP)) as a black curve over the x range. Enter A_low, A_high, P50 and dP; P is the x value, so use a numeric x-axis. |
 
 ---
 

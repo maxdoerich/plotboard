@@ -65,6 +65,11 @@ DEFAULTS: dict[str, object] = {
     "ps_trendline":        "none",
     "ps_trendline_source": "means",
     "ps_trendline_mode":   "overlay",
+    "ps_sigmoid":          False,
+    "ps_sig_alow":         0.0,
+    "ps_sig_ahigh":        1.0,
+    "ps_sig_p50":          1.0,
+    "ps_sig_dp":           1.0,
     # Tick marks
     "ps_tick_direction":    "out",
     "ps_major_tick_length": 4.0,

@@ -176,6 +176,7 @@ def draw_plot(
     trendline: str = "none",       # "none"|"smooth"|"linear"|"poly2"|"poly3"|"exp"|"log"|"power"|"spline"
     trendline_source: str = "means",  # "means" | "replicates"
     trendline_mode: str = "overlay",  # "overlay" | "replace"
+    sigmoid: tuple[float, float, float, float] | None = None,  # (A_low, A_high, P50, dP)
     # Ticks
     tick_direction: str = "out",      # "in" | "out" | "inout"
     major_tick_length: float = 4.0,
@@ -243,7 +244,8 @@ def draw_plot(
             y_tick_interval=y_tick_interval, error_style=error_style,
             line_width=line_width, marker_style=marker_style, marker_size=marker_size,
             x_suffix=x_suffix, trendline=trendline, trendline_source=trendline_source,
-            trendline_mode=trendline_mode, tick_direction=tick_direction,
+            trendline_mode=trendline_mode, sigmoid=sigmoid,
+            tick_direction=tick_direction,
             major_tick_length=major_tick_length, major_tick_width=major_tick_width,
             minor_ticks_y=minor_ticks_y, minor_ticks_x=minor_ticks_x,
             minor_tick_length=minor_tick_length, minor_tick_width=minor_tick_width,
@@ -265,7 +267,7 @@ def _draw(
     legend_inside, fs, tick_rotation, tick_fs, spines, spine_width, y_format,
     x_numeric, x_tick_interval, y_tick_interval, error_style, line_width,
     marker_style, marker_size, x_suffix, trendline, trendline_source,
-    trendline_mode, tick_direction, major_tick_length, major_tick_width,
+    trendline_mode, sigmoid, tick_direction, major_tick_length, major_tick_width,
     minor_ticks_y, minor_ticks_x, minor_tick_length, minor_tick_width,
     stat_results, show_ns, test_mode, compare_axis, bracket_linewidth,
     bracket_fontsize, show_pvalue, show_significance, show_fold_change,
@@ -307,6 +309,7 @@ def _draw(
             x_numeric=x_numeric, x_suffix=x_suffix, x_tick_interval=x_tick_interval,
             tick_rotation=tick_rotation, tick_fs=tick_fs, trendline=trendline,
             trendline_source=trendline_source, trendline_mode=trendline_mode,
+            sigmoid=sigmoid,
         )
         _draw_legend(ax, treatments, palette=palette, legend_title=legend_title,
                      show_legend=show_legend, legend_inside=legend_inside, fs=fs,
@@ -405,7 +408,7 @@ def _draw_line(
     ax, df, *, conditions, treatments, palette, error_bar, cap_size, show_points,
     point_size, point_alpha, error_style, line_width, marker_style, marker_size,
     x_numeric, x_suffix, x_tick_interval, tick_rotation, tick_fs, trendline,
-    trendline_source, trendline_mode,
+    trendline_source, trendline_mode, sigmoid,
 ) -> None:
     """One line per treatment, conditions along x."""
     numeric_x = x_axis_is_numeric(conditions, x_numeric)
@@ -502,6 +505,14 @@ def _draw_line(
                 x_dense, y_dense = fitted
                 ax.plot(x_dense, y_dense, color=color, linewidth=line_width + 0.5,
                         linestyle="--", zorder=5)
+
+    # A(P) = A_low + (A_high - A_low) / (1 + exp((P - P50) / dP)), over the x data range.
+    if sigmoid is not None and sigmoid[3] != 0 and len(x_vals) > 1 and max(x_vals) > min(x_vals):
+        a_low, a_high, p50, dp = sigmoid
+        xs = np.linspace(min(x_vals), max(x_vals), 300)
+        with np.errstate(over="ignore"):  # exp overflow -> curve saturates at A_low
+            ys = a_low + (a_high - a_low) / (1.0 + np.exp((xs - p50) / dp))
+        ax.plot(xs, ys, color="black", linewidth=line_width + 0.5, zorder=6)
 
     if numeric_x:
         # Continuous axis: let matplotlib place ticks at nice intervals across
