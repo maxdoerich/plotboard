@@ -22,9 +22,6 @@ def _hex_list(cmap_name: str, n: int = 10) -> list[str]:
 PALETTES: dict[str, list[str]] = {
     "iGEM": ["#E03BFF", "#ED7A3E", "#FCCF00", "#3D2652", "#D3D3D3",
              "#4EC9FF", "#FF6B6B", "#6BCB77", "#FFD166", "#118AB2"],
-    # Mains first, then peach/teal shades interleaved from light to dark.
-    "Peach & Teal": ["#F5AB7F", "#AFE2E3", "#F3894F", "#83CECE",
-                     "#DC6B3C", "#5FB7B9", "#DD501B", "#3C8285"],
     "Tab10": [matplotlib.colors.to_hex(c) for c in plt.get_cmap("tab10").colors],
     "Viridis": _hex_list("viridis", 10),
     "Pastel": sns.color_palette("pastel").as_hex(),

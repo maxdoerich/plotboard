@@ -86,7 +86,6 @@ def make_figure(
     trendline: str = "none",       # "none"|"smooth"|"linear"|"poly2"|"poly3"|"exp"|"log"|"power"|"spline"
     trendline_source: str = "means",  # "means" | "replicates"
     trendline_mode: str = "overlay",  # "overlay" | "replace"
-    sigmoid: tuple[float, float, float, float] | None = None,  # (A_low, A_high, P50, dP)
     # Ticks
     tick_direction: str = "out",      # "in" | "out" | "inout"
     major_tick_length: float = 4.0,
@@ -318,14 +317,6 @@ def make_figure(
                     ax.plot(x_dense, y_dense, color=color,
                             linewidth=line_width + 0.5, linestyle="--",
                             zorder=5)
-
-        # ---- Sigmoid curve: A(P) = A_low + (A_high - A_low) / (1 + exp((P - P50) / dP))
-        if sigmoid is not None and sigmoid[3] != 0 and max(x_vals) > min(x_vals):
-            a_low, a_high, p50, dp = sigmoid
-            xs = np.linspace(min(x_vals), max(x_vals), 300)
-            with np.errstate(over="ignore"):  # exp overflow -> curve saturates at A_low
-                ys = a_low + (a_high - a_low) / (1.0 + np.exp((xs - p50) / dp))
-            ax.plot(xs, ys, color="black", linewidth=line_width + 0.5, zorder=6)
 
         # ---- X ticks -------------------------------------------------------
         if x_numeric and _all_numeric:
