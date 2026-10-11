@@ -167,8 +167,8 @@ with st.sidebar:
 
 current = settings.snapshot()
 
-if not data_out["selected_conditions"]:
-    st.warning("Select at least one condition in the Data tab.")
+if not data_out["selected_conditions"] or not data_out["selected_treatments"]:
+    st.warning("Select at least one condition and one treatment in the Data tab.")
     st.stop()
 
 df = dataio.apply_selection(

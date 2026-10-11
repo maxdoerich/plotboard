@@ -39,6 +39,14 @@ def resolve_palette(s: dict, n: int) -> list[str]:
     return [custom[i % len(custom)] for i in range(n)]
 
 
+def resolve_point_colors(s: dict, n: int) -> list[str] | None:
+    """Per-treatment point colours, or None to keep the plot type's default."""
+    custom = [c for c in (s.get("ps_point_colors") or []) if c]
+    if not s.get("ps_point_custom") or not custom:
+        return None
+    return [custom[i % len(custom)] for i in range(n)]
+
+
 def resolve_fonts(s: dict) -> tuple[dict | None, float, float | None]:
     """Return ``(fontsizes, font_scale, tick_fontsize)``.
 
@@ -127,6 +135,7 @@ def draw_kwargs(
         show_points=s.get("ps_show_points", True),
         point_size=s.get("ps_point_size", 4.0),
         point_alpha=s.get("ps_point_alpha", 0.7),
+        point_colors=resolve_point_colors(s, n_treatments),
         log_scale=s.get("ps_log_scale", False),
         show_grid=s.get("ps_show_grid", False),
         palette=resolve_palette(s, n_treatments),
@@ -159,11 +168,10 @@ def draw_kwargs(
         trendline=s.get("ps_trendline", "none"),
         trendline_source=s.get("ps_trendline_source", "means"),
         trendline_mode=s.get("ps_trendline_mode", "overlay"),
-        sigmoid=(
-            (s.get("ps_sig_alow", 0.0), s.get("ps_sig_ahigh", 1.0),
-             s.get("ps_sig_p50", 1.0), s.get("ps_sig_dp", 1.0))
-            if s.get("ps_sigmoid", False) else None
-        ),
+        sigmoids=[
+            (c["alow"], c["ahigh"], c["p50"], c["dp"], c["color"])
+            for c in (s.get("ps_sigmoids") or [])
+        ],
         tick_direction=s.get("ps_tick_direction", "out"),
         major_tick_length=s.get("ps_major_tick_length", 4.0),
         major_tick_width=s.get("ps_major_tick_width", 0.8),

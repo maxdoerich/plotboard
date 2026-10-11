@@ -1,4 +1,4 @@
-"""ui/tab_data.py — which conditions to show, and in what order.
+"""ui/tab_data.py — which conditions and treatments to show, and in what order.
 
 The sheet selector and the preset row used to live here; they moved above the
 tabs (``ui/sidebar_top.py``) because they are the most-used controls in the app.
@@ -46,13 +46,31 @@ def render(ctx: dataio.DataContext, *, scope: str = "") -> dict:
     if len(selected) < len(ctx.conditions):
         st.caption(f"Showing {len(selected)} of {len(ctx.conditions)}.")
 
+    st.caption("Treatments to show")
+    treat_key = settings.filter_key(f"{scope}::{ctx.sheet}::treatments",
+                                    ctx.treatments)
+    treat_default = ({} if treat_key in st.session_state
+                     else {"default": list(ctx.treatments)})
+    settings.reassert(treat_key)
+    selected_treatments = st.multiselect(
+        "Show treatments",
+        options=ctx.treatments,
+        key=treat_key,
+        label_visibility="collapsed",
+        **treat_default,
+    )
+
     conditions, treatments = _render_reorder(ctx, scope)
+    # The order list doubles as the selection: dataio.apply_selection drops
+    # every treatment that is not in it, and each panel stores it as-is.
+    treatments = [t for t in treatments if t in set(selected_treatments)]
 
     st.divider()
     show_preview = st.toggle("Rename labels & show raw data", key=PREVIEW_KEY)
 
     return {
         "selected_conditions": selected,
+        "selected_treatments": selected_treatments,
         "conditions": conditions,
         "treatments": treatments,
         "show_preview": show_preview,

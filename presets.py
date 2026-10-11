@@ -15,10 +15,13 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from pathlib import Path
 
 # Presets live next to this file (the project root), not cwd.
 PRESETS_DIR = Path(__file__).parent / ".presets"
+# Presets shipped with the repo; copied into PRESETS_DIR on first run.
+SEED_DIR = Path(__file__).parent / "default_presets"
 
 # ---------------------------------------------------------------------------
 # Default values for every saveable setting.
@@ -36,6 +39,8 @@ DEFAULTS: dict[str, object] = {
     "ps_show_points":      True,
     "ps_point_size":       4.0,
     "ps_point_alpha":      0.7,
+    "ps_point_custom":     False,      # pick a colour per treatment for the points
+    "ps_point_colors":     [],
     # Labels
     "ps_title":            "",
     "ps_xlabel":           "Condition",
@@ -65,11 +70,7 @@ DEFAULTS: dict[str, object] = {
     "ps_trendline":        "none",
     "ps_trendline_source": "means",
     "ps_trendline_mode":   "overlay",
-    "ps_sigmoid":          False,
-    "ps_sig_alow":         0.0,
-    "ps_sig_ahigh":        1.0,
-    "ps_sig_p50":          1.0,
-    "ps_sig_dp":           1.0,
+    "ps_sigmoids":         [],         # [{id, alow, ahigh, p50, dp, color}, ...]
     # Tick marks
     "ps_tick_direction":    "out",
     "ps_major_tick_length": 4.0,
@@ -120,16 +121,22 @@ PRESET_EXCLUDE: frozenset[str] = frozenset({"ps_title"})
 # ---------------------------------------------------------------------------
 
 def _ensure_default() -> None:
-    """Create the Default preset from DEFAULTS if it doesn't exist yet."""
+    """Seed PRESETS_DIR with the shipped presets, then guarantee a Default.
+
+    Existing files are never overwritten, so a user's edits to a shipped
+    preset survive; a deleted one comes back on the next start.
+    """
     PRESETS_DIR.mkdir(exist_ok=True)
+    for src in SEED_DIR.glob("*.json"):
+        dst = PRESETS_DIR / src.name
+        if not dst.exists():
+            shutil.copyfile(src, dst)
     default_path = PRESETS_DIR / "Default.json"
     if not default_path.exists():
         default_path.write_text(
             json.dumps(_preset_payload(DEFAULTS), indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
-
-_ensure_default()
 
 
 _STARTUP_FILE = PRESETS_DIR / "_startup.txt"
@@ -175,6 +182,13 @@ def load(name: str) -> dict:
     path = PRESETS_DIR / f"{_sanitise(name)}.json"
     data = json.loads(path.read_text(encoding="utf-8"))
     clean = {k: _migrate(k, v) for k, v in data.items() if k in DEFAULTS}
+    if data.get("ps_sigmoid") and "ps_sigmoids" not in data:
+        # Older presets held a single sigmoid curve in five flat keys.
+        clean["ps_sigmoids"] = [{
+            "id": 0, "color": "#000000",
+            **{k: data.get(f"ps_sig_{k}", v) for k, v in
+               (("alow", 0.0), ("ahigh", 1.0), ("p50", 1.0), ("dp", 1.0))},
+        }]
     return {**DEFAULTS, **clean}
 
 
@@ -219,3 +233,7 @@ def _migrate(key: str, value: object) -> object:
 def _sanitise(name: str) -> str:
     """Strip characters that are unsafe in filenames."""
     return re.sub(r'[\\/*?:"<>|]', "_", name.strip())
+
+
+# Runs last: it needs the helpers above to be defined.
+_ensure_default()

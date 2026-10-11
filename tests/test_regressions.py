@@ -411,6 +411,61 @@ def test_font_family_is_applied():
         f"y-label rendered as {axes.yaxis.label.get_fontname()!r}")
 
 
+def test_multiple_sigmoid_curves_with_own_colours():
+    """Each curve in ps_sigmoids is drawn as its own line in its own colour;
+    a legacy single-curve preset loads as a one-element list."""
+    frame = pd.DataFrame({
+        "condition": ["0", "1", "2", "3"] * 2, "treatment": ["a"] * 4 + ["b"] * 4,
+        "value": [1.0, 2.0, 3.0, 4.0, 2.0, 3.0, 4.0, 5.0],
+    })
+    curves = [{"id": 0, "alow": 0, "ahigh": 1, "p50": 1, "dp": 1, "color": "#ff0000"},
+              {"id": 1, "alow": 0, "ahigh": 2, "p50": 2, "dp": 0.5, "color": "#00ff00"}]
+    kwargs = figspec.draw_kwargs({**xpresets.DEFAULTS, "ps_plot_type": "line",
+                                  "ps_sigmoids": curves},
+                                 n_treatments=2, title="t", ylabel="y")
+    base = plotter.make_figure(frame, palette=utils.get_palette("iGEM", 2),
+                               plot_type="line")
+    figure = plotter.make_figure(frame, palette=utils.get_palette("iGEM", 2),
+                                 **{k: v for k, v in kwargs.items() if k != "palette"})
+    drawn = [ln.get_color() for ln in figure.axes[0].lines]
+    assert "#ff0000" in drawn and "#00ff00" in drawn, drawn
+    assert len(figure.axes[0].lines) == len(base.axes[0].lines) + 2
+
+    name = "__pytest_sigmoid__"
+    path = xpresets.PRESETS_DIR / f"{name}.json"
+    try:
+        path.write_text('{"ps_sigmoid": true, "ps_sig_p50": 5.0}', encoding="utf-8")
+        (legacy,) = xpresets.load(name)["ps_sigmoids"]
+        assert legacy["p50"] == 5.0 and legacy["dp"] == 1.0
+    finally:
+        if path.exists():
+            path.unlink()
+
+
+def test_point_colours_per_treatment():
+    """Custom point colours reach the dots of bar and line plots; off keeps
+    the old defaults (black dots on bars)."""
+    import numpy as np
+    frame = pd.DataFrame({
+        "condition": ["0", "1"] * 4, "treatment": ["a"] * 4 + ["b"] * 4,
+        "value": [1.0, 2.0, 1.5, 2.5, 2.0, 3.0, 2.5, 3.5],
+    })
+
+    def dot_colours(plot_type, **extra):
+        s = {**xpresets.DEFAULTS, "ps_plot_type": plot_type, **extra}
+        kw = figspec.draw_kwargs(s, n_treatments=2, title="t", ylabel="y")
+        fig = plotter.make_figure(frame, **kw)
+        return {tuple(np.round(c, 2)) for coll in fig.axes[0].collections
+                for c in coll.get_facecolor()}
+
+    red, green = (1.0, 0.0, 0.0, 0.7), (0.0, 0.5, 0.0, 0.7)
+    on = {"ps_point_custom": True, "ps_point_colors": ["#ff0000", "#008000"]}
+    for plot_type in ("bar+strip", "line+scatter"):
+        colours = dot_colours(plot_type, **on)
+        assert red in colours and green in colours, (plot_type, colours)
+    assert red not in dot_colours("bar+strip")
+
+
 # ---------------------------------------------------------------------------
 # Panel mode
 # ---------------------------------------------------------------------------
@@ -441,6 +496,57 @@ def test_panels_keep_independent_settings():
     assert stored[0]["ps_fig_width"] == 15, "panel A lost its width"
     assert stored[1]["ps_bar_gap"] == 0.6, "panel B lost its gap"
     assert stored[0]["ps_bar_gap"] != 0.6, "panel B's gap leaked into panel A"
+
+
+def test_panels_filter_treatments_independently(tmp_path=None):
+    """Each panel keeps its own selection of treatment columns."""
+    import tempfile
+
+    import openpyxl
+
+    import settings
+
+    frame = pd.DataFrame({
+        "condition": ["x", "y"] * 3, "treatment": list("aabbcc"),
+        "value": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+    })
+    only_ab = dataio.apply_selection(frame, ["x", "y"], ["a", "b"])
+    assert set(only_ab["treatment"]) == {"a", "b"}
+    assert len(dataio.apply_selection(frame, ["x", "y"], [])) == len(frame)
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "S"
+    ws.append(["Condition", "A", None, "B", None, "C", None])
+    ws.append(["ctl", 1, 2, 3, 4, 5, 6])
+    ws.append(["drug", 2, 3, 4, 5, 6, 7])
+    path = os.path.join(tempfile.mkdtemp(), "treat.xlsx")
+    wb.save(path)
+
+    app = AppTest.from_file(os.path.join(PROJECT_DIR, "app.py"),
+                            default_timeout=TIMEOUT)
+    app.run()
+    app.text_input[0].set_value(path)
+    app.session_state["_panel_mode"] = True
+    app.run()
+    _assert_clean(app, "opening the workbook in panel mode")
+
+    def treat_key(panel):
+        return settings.filter_key(f"panel{panel}::S::treatments", ["A", "B", "C"])
+
+    app.session_state[treat_key(0)] = ["A", "C"]
+    app.run()
+    _assert_clean(app, "hiding a treatment in panel A")
+    assert app.session_state["panels"][0]["treat_order"] == ["A", "C"]
+
+    [b for b in app.button if b.key == "_panel_btn_1"][0].click().run()
+    _assert_clean(app, "switching panel")
+    assert app.session_state["panels"][1]["treat_order"] == ["A", "B", "C"]
+    assert app.session_state["panels"][0]["treat_order"] == ["A", "C"]
+
+    [b for b in app.button if b.key == "_panel_btn_0"][0].click().run()
+    _assert_clean(app, "switching back")
+    assert app.session_state[treat_key(0)] == ["A", "C"], "selection not restored"
 
 
 # ---------------------------------------------------------------------------

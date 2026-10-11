@@ -113,14 +113,21 @@ def apply_selection(
     conditions: list,
     treatments: list,
 ) -> pd.DataFrame:
-    """Filter to the chosen conditions and impose the chosen display order."""
+    """Filter to the chosen conditions and treatments, in the chosen order.
+
+    *treatments* is both the selection and the legend order; a list with no
+    known treatment in it keeps them all.
+    """
     known = set(categories(df["condition"]))
     conditions = [c for c in conditions if c in known] or list(known)
+    treat_known = [t for t in treatments if t in set(categories(df["treatment"]))]
 
-    out = df[df["condition"].isin(conditions)].copy()
+    keep = df["condition"].isin(conditions)
+    if treat_known:
+        keep &= df["treatment"].isin(treat_known)
+    out = df[keep].copy()
     out["condition"] = pd.Categorical(out["condition"], categories=conditions,
                                       ordered=True)
-    treat_known = [t for t in treatments if t in set(categories(df["treatment"]))]
     out["treatment"] = pd.Categorical(out["treatment"],
                                       categories=treat_known or treatments,
                                       ordered=True)

@@ -12,6 +12,7 @@ from __future__ import annotations
 import streamlit as st
 
 import dataio
+import figspec
 import plotter
 import settings
 import utils
@@ -69,7 +70,7 @@ def render(ctx: dataio.DataContext) -> None:
 
     _render_colors(ctx)
     _render_marks(base_type)
-    _render_points()
+    _render_points(ctx, base_type)
     _render_figure_size()
 
     if base_type == "line":
@@ -141,14 +142,35 @@ def _render_marks(base_type: str) -> None:
         st.slider("Cap size", 0.0, 0.3, key="ps_cap_size", step=0.01)
 
 
-def _render_points() -> None:
+def _render_points(ctx: dataio.DataContext, base_type: str) -> None:
     st.divider()
-    if st.toggle("Show individual data points", key="ps_show_points"):
-        col_size, col_alpha = st.columns(2)
-        with col_size:
-            st.slider("Dot size", 1.0, 12.0, key="ps_point_size", step=0.5)
-        with col_alpha:
-            st.slider("Dot opacity", 0.1, 1.0, key="ps_point_alpha", step=0.05)
+    if not st.toggle("Show individual data points", key="ps_show_points"):
+        return
+    col_size, col_alpha = st.columns(2)
+    with col_size:
+        st.slider("Dot size", 1.0, 12.0, key="ps_point_size", step=0.5)
+    with col_alpha:
+        st.slider("Dot opacity", 0.1, 1.0, key="ps_point_alpha", step=0.05)
+
+    if not st.toggle("Custom dot colour per treatment", key="ps_point_custom",
+                     help="Off: black dots on bars/boxes/violins, the line "
+                          "colour on line plots."):
+        return
+    stored = list(settings.get("ps_point_colors") or [])
+    # Seed like the palette pickers: line dots start at their line colour,
+    # the rest at the black they were drawn in before this option existed.
+    if base_type == "line":
+        seed = figspec.resolve_palette(settings.snapshot(), max(ctx.n_treatments, 1))
+    else:
+        seed = ["#000000"]
+    chosen: list[str] = []
+    for i, treatment in enumerate(ctx.treatments[:settings.CP_MAX]):
+        if f"pc_{i}" not in st.session_state:
+            st.session_state[f"pc_{i}"] = (
+                stored[i] if i < len(stored) and stored[i] else seed[i % len(seed)]
+            )
+        chosen.append(st.color_picker(str(treatment), key=f"pc_{i}"))
+    settings.set_custom_colors(chosen, "ps_point_colors")
 
 
 def _render_figure_size() -> None:
@@ -225,17 +247,49 @@ def _render_line_options(ctx: dataio.DataContext) -> None:
                                         "replace": "Replace line"}[x])
 
 
+_SIGMOID_FIELDS = (("alow", "A_low", 0.0), ("ahigh", "A_high", 1.0),
+                   ("p50", "P50", 1.0), ("dp", "dP", 1.0))
+
+
+def _add_sigmoid_cb() -> None:
+    curves = list(settings.get("ps_sigmoids") or [])
+    new_id = max((c["id"] for c in curves), default=-1) + 1
+    curves.append({"id": new_id, "color": "#000000",
+                   **{k: d for k, _, d in _SIGMOID_FIELDS}})
+    settings.update({"ps_sigmoids": curves}, mark_touched=False)
+
+
+def _remove_sigmoid_cb(curve_id: int) -> None:
+    curves = [c for c in settings.get("ps_sigmoids") or [] if c["id"] != curve_id]
+    settings.update({"ps_sigmoids": curves}, mark_touched=False)
+
+
 def _render_sigmoid_options() -> None:
-    st.caption("Sigmoid curve")
-    if not st.checkbox(
-        "Plot  A(P) = A_low + (A_high − A_low) / (1 + exp((P − P50) / dP))",
-        key="ps_sigmoid", help="P is the x-axis value, so use a numeric x-axis.",
-    ):
-        return
-    col_a, col_b = st.columns(2)
-    with col_a:
-        st.number_input("A_low", key="ps_sig_alow", format="%g")
-        st.number_input("P50", key="ps_sig_p50", format="%g")
-    with col_b:
-        st.number_input("A_high", key="ps_sig_ahigh", format="%g")
-        st.number_input("dP", key="ps_sig_dp", format="%g")
+    st.caption("Sigmoid curves")
+    st.caption("A(P) = A_low + (A_high − A_low) / (1 + exp((P − P50) / dP)); "
+               "P is the x-axis value, so use a numeric x-axis.")
+    chosen = []
+    for n, curve in enumerate(settings.get("ps_sigmoids") or [], start=1):
+        cid = curve["id"]
+        # Keyed by curve id (not position) so removing one keeps the others'
+        # values. Seeded from the stored list, like the custom palette pickers.
+        for field in ("color", *(f for f, _, _ in _SIGMOID_FIELDS)):
+            st.session_state.setdefault(f"sg_{cid}_{field}", curve[field])
+        with st.container(border=True):
+            head, rm = st.columns([4, 1])
+            head.markdown(f"**Curve {n}**")
+            rm.button("✕", key=f"sg_{cid}_rm", on_click=_remove_sigmoid_cb,
+                      args=(cid,), help="Remove this curve")
+            cols = st.columns(2)
+            vals = {"id": cid}
+            for j, (field, label, _) in enumerate(_SIGMOID_FIELDS):
+                with cols[j % 2]:
+                    vals[field] = st.number_input(label, key=f"sg_{cid}_{field}",
+                                                  format="%g")
+            vals["color"] = st.color_picker("Colour", key=f"sg_{cid}_color")
+            chosen.append(vals)
+    st.button("＋ Add sigmoid curve", key="sg_add", on_click=_add_sigmoid_cb)
+
+    # ps_sigmoids has no widget of its own, so it is safe to write after the
+    # curve widgets rendered — and is what carries them into presets and panels.
+    settings.set_sigmoids(chosen)

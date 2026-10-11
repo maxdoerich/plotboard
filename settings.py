@@ -56,6 +56,8 @@ TOUCHED_KEY = "_settings_touched"
 
 # Number of custom-colour pickers mirrored per palette (cp_0 … cp_{N-1}).
 CP_MAX = 32
+# (stored list key, picker widget-key prefix)
+_COLOR_LISTS = (("ps_custom_colors", "cp_"), ("ps_point_colors", "pc_"))
 
 
 # ---------------------------------------------------------------------------
@@ -109,12 +111,13 @@ def hydrate() -> None:
         st.session_state[key] = value
         store[key] = value
 
-    # Custom palette pickers mirror the ps_custom_colors list.
-    for i, colour in enumerate(store.get("ps_custom_colors") or []):
-        if not colour:
-            continue
-        key = f"cp_{i}"
-        st.session_state[key] = st.session_state.get(key, colour)
+    # Custom palette / point colour pickers mirror their stored lists.
+    for list_key, prefix in _COLOR_LISTS:
+        for i, colour in enumerate(store.get(list_key) or []):
+            if not colour:
+                continue
+            key = f"{prefix}{i}"
+            st.session_state[key] = st.session_state.get(key, colour)
 
 
 def reassert(*keys: str) -> None:
@@ -183,18 +186,32 @@ def update(values: dict[str, Any], *, mark_touched: bool = True) -> None:
         touched = st.session_state.setdefault(TOUCHED_KEY, set())
         touched.update(k for k in values if k in presets.DEFAULTS)
 
-    # Keep the colour pickers in step with a restored custom palette.
-    for i, colour in enumerate(values.get("ps_custom_colors") or []):
-        if colour:
-            st.session_state[f"cp_{i}"] = colour
+    # Curve widgets are keyed by curve id, which a restored list may reuse for
+    # different values; drop them so they re-seed from the new list.
+    if "ps_sigmoids" in values:
+        for key in [k for k in st.session_state if str(k).startswith("sg_")]:
+            del st.session_state[key]
+
+    # Keep the colour pickers in step with a restored palette.
+    for list_key, prefix in _COLOR_LISTS:
+        for i, colour in enumerate(values.get(list_key) or []):
+            if colour:
+                st.session_state[f"{prefix}{i}"] = colour
 
 
-def set_custom_colors(colors: list[str]) -> None:
-    """Store the custom palette.  ``ps_custom_colors`` has no widget of its own,
-    so unlike other settings it is safe to write after the pickers rendered."""
-    st.session_state["ps_custom_colors"] = list(colors)
+def set_custom_colors(colors: list[str], key: str = "ps_custom_colors") -> None:
+    """Store a colour list (custom palette or point colours).  These keys have no
+    widget of their own, so unlike other settings they are safe to write after
+    the pickers rendered."""
+    st.session_state[key] = list(colors)
     store = st.session_state.setdefault(STORE_KEY, {})
-    store["ps_custom_colors"] = list(colors)
+    store[key] = list(colors)
+
+
+def set_sigmoids(curves: list[dict]) -> None:
+    """Store the sigmoid curve list (no widget of its own; see set_custom_colors)."""
+    st.session_state["ps_sigmoids"] = list(curves)
+    st.session_state.setdefault(STORE_KEY, {})["ps_sigmoids"] = list(curves)
 
 
 # ---------------------------------------------------------------------------

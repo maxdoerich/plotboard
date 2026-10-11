@@ -123,16 +123,25 @@ def _restore(index: int) -> None:
     if panel.get("sheet"):
         st.session_state["_sheet_select"] = panel["sheet"]
 
-    # Re-seed this panel's condition filter. The widget key depends on the
-    # sheet's conditions, so the sheet has to be parsed — it is cached, and
-    # this only runs when the user clicks a different panel.
+    # Re-seed this panel's condition and treatment filters. The widget keys
+    # depend on the sheet's contents, so the sheet has to be parsed — it is
+    # cached, and this only runs when the user clicks a different panel.
+    # ``treat_order`` holds only the shown treatments (see tab_data.render).
     stored_filter = panel.get("filter")
-    if stored_filter and panel.get("sheet"):
+    stored_treat = panel.get("treat_order")
+    if (stored_filter or stored_treat) and panel.get("sheet"):
         try:
             frame = _sheet_frame(panel["sheet"])
+            scope = f"panel{index}::{panel['sheet']}"
             conditions = dataio.categories(frame["condition"])
-            key = settings.filter_key(f"panel{index}::{panel['sheet']}", conditions)
-            st.session_state[key] = [c for c in stored_filter if c in conditions]
+            treatments = dataio.categories(frame["treatment"])
+            shown = [c for c in stored_filter or [] if c in conditions]
+            if shown:
+                st.session_state[settings.filter_key(scope, conditions)] = shown
+            shown = [t for t in stored_treat or [] if t in treatments]
+            if shown:
+                key = settings.filter_key(f"{scope}::treatments", treatments)
+                st.session_state[key] = shown
         except Exception:
             pass  # a missing sheet must not block the panel switch
 
